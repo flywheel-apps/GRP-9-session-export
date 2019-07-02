@@ -1,13 +1,16 @@
-# GRP-9-dicom-export
-Export DICOM data with modified metadata
+# GRP-9-session-export
+Export Session data with modified metadata reflected in exported DICOM files.
 
-INPUTS
-* Session
-* Destination project (possibly provided in the context or in the gear config?)
+Exports data (including metadata) from a given session to the specified 'export_project'. The gear will also read DICOM header information from Flywheel metadata and modify DICOM headers to reflect the changes made. Optionally, original data can be 'archived' to an <archive_project>, as configured during the gear execution. The exported, and optionally archived, session will be tagged as appropriate using the 'EXPORTED' tag. At present this gear has no outputs and can only be run at the session level. Prior to running this gear, the export_project, and archive_project (if provided) must exist.
 
+### Future Directions and improvements
+1. Track which data are exported and which fields are updated for a given file and write that out to a spreadsheet.
+2. Support export at project level, using tags to indicate which sessions should be exported.
 
 ## The Workflow
 DICOM data enters Flywheel, after which a subset of the header is extracted and saved as metadata on the file’s info key. In some situations, the header needs to be altered or corrected during the curation process before the data is distributed to other teams. Both versions of the DICOM data should exist after the curation process: the modified data distributed to/accessible by other teams as well as the original data (with controlled access).
+
+![](workflow.png)
 
 Currently, if modifications are made to the header information via metadata changes in Flywheel, the changes do not persist to the DICOM data itself. Users would like a way to conveniently modify the header and have it persist on downloads.  
 
@@ -35,6 +38,7 @@ Currently, if modifications are made to the header information via metadata chan
     b. Other fields can be applied to the DICOM header if they correlate to a Flywheel field
 
       i. For Example subject.label -> PatientId
+
 7. The Export Gear will copy over any data from the Quarantine Project, including the modified DICOMs, and save them to the destination project to be accessed by users (in this example, a Data Science team)
 
 8. As part of the proposed Export Gear workflow, the original DICOM data (any relevant other files) can be moved to an Archival project (or remain in quarantine?) where they can remain as a reference for future need.
@@ -45,9 +49,6 @@ Currently, if modifications are made to the header information via metadata chan
 
 9. Optionally, this will move the session from the Quarantine Project to enable a 	queue-like workflow.
 
-##Future Directions and improvements
-1. Keep track of which data are exported where and which fields are updated and write that out to a spreadsheet.
-2. Support export at project level, using tags to indicate which sessions should be exported.
 
 ##Related Roadmap Work
 
