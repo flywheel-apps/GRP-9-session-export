@@ -1,10 +1,12 @@
 # GRP-9-session-export
 Export Session data with modified metadata reflected in exported DICOM files.
 
-Exports data (including metadata) from a given session to the specified 'export_project'. The gear will also read DICOM header information from Flywheel metadata and modify DICOM headers to reflect the changes made. Optionally, original data can be 'archived' to an <archive_project>, as configured during the gear execution. The exported, and optionally archived, session will be tagged as appropriate using the 'EXPORTED' tag. At present this gear has no outputs and can only be run at the session level. Prior to running this gear, the export_project, and archive_project (if provided) must exist.
+Exports data (including metadata) from a given session to the specified 'export_project'. The gear will also read DICOM header information from Flywheel metadata and modify DICOM headers to reflect the changes made. Optionally, original data can be 'archived' to an <archive_project>, as configured during the gear execution. The exported, and optionally archived, session will be tagged as appropriate using the 'EXPORTED' tag. At present this gear can only be run at the session level. Output is an export log in csv format.
+
+__Prior to running this gear, the `export_project`, and `archive_project` (if provided) must exist.__
 
 ### Future Directions and improvements
-1. Track which data are exported and which fields are updated for a given file and write that out to a spreadsheet.
+1. Track which data (at the file level) are exported and which fields are updated for a given file and write that out to a spreadsheet.
 2. Support export at project level, using tags to indicate which sessions should be exported.
 
 ## The Workflow

@@ -2,6 +2,7 @@
 
 import os
 import sys
+import csv
 import json
 import pprint
 import zipfile
@@ -15,6 +16,7 @@ from dicom_metadata import dicom_header_extract
 logging.basicConfig()
 log = logging.getLogger('[GRP 9]:')
 log.setLevel(logging.INFO)
+
 
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
@@ -298,6 +300,19 @@ def main(context):
 
 
     ########################################################################
+    # Create the export_data dict
+    export_data = []
+    export_instance = {
+                        "container": "",
+                        "name": "",
+                        "status": "",
+                        "origin_path": "",
+                        "export_path": "",
+                        "archive_path": ""
+                    }
+
+
+    ########################################################################
     # Create the subject/session container
 
     # What we want at the end of this is the export session
@@ -310,9 +325,18 @@ def main(context):
     ########################################################################
     # Create Subject
 
+    sub_export = export_instance.copy()
+    sub_export['container'] = "subject"
+    sub_export['name'] = subject.code
+    sub_export['origin_path'] = '{}/{}/{}'.format(project.group, project.label, subject.code)
+    sub_export['export_path'] = '{}/{}/{}'.format(export_project.group, export_project.label, subject.code)
+    if archive_project:
+        sub_export['archive_path'] = '{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code)
+
     if not subj:
         log.info('Subject %s does not exist in project %s.' % (subject.code, export_project.label))
         log.info('CREATING SUBJECT CONTAINER')
+        sub_export['status'] = "created"
         subject_keys = ['code',
                         'cohort',
                         'ethnicity',
@@ -340,12 +364,26 @@ def main(context):
 
     else:
         log.info('Found existing subject %s in project: %s. Using existing container.' % (subj.code, export_project.label))
+        sub_export['status'] = "used existing"
 
+    export_data.append(sub_export)
 
     ########################################################################
     # Create the export_session
 
     log.info('CREATING SESSION CONTAINER {} IN {}'.format(subj.label, export_project.label))
+
+    # Data logging
+    session_export = export_instance.copy()
+    session_export['container'] = "session"
+    session_export['status'] = "created"
+    session_export['name'] = session.label
+    session_export['origin_path'] = '{}/{}/{}/{}'.format(project.group, project.label, subject.code, session.label)
+    session_export['export_path'] = '{}/{}/{}/{}'.format(export_project.group, export_project.label, subject.code, session.label)
+    if archive_project:
+        session_export['archive_path'] = '{}/{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code, session.label)
+    export_data.append(session_export)
+
     session_keys = ['age',
                     'info',
                     'label',
@@ -375,6 +413,18 @@ def main(context):
     log.info('EXPORTING {} ACQUISITIONS...'.format(num_acq))
     acq_count = 0
     for acq in session.acquisitions():
+
+        # Data logging
+        acquisition_export = export_instance.copy()
+        acquisition_export['container'] = "acquisition"
+        acquisition_export['status'] = "created"
+        acquisition_export['name'] = acq.label
+        acquisition_export['origin_path'] = '{}/{}/{}/{}/{}'.format(project.group, project.label, subject.code, session.label, acq.label)
+        acquisition_export['export_path'] = '{}/{}/{}/{}/{}'.format(export_project.group, export_project.label, subject.code, session.label, acq.label)
+        if archive_project:
+            acquisition_export['archive_path'] = '{}/{}/{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code, session.label, acq.label)
+        export_data.append(acquisition_export)
+
         acq_count +=1
         log.info('ACQUISITION {}/{}'.format(acq_count, num_acq))
         log.info('CREATING ACQUISITION CONTAINER: [label=%s]' % (acq.label))
@@ -413,6 +463,17 @@ def main(context):
         _archive_session(fw, session, archive_project)
 
 
+    ########################################################################
+    # Generate export log
+
+    export_log = os.path.join(context.output_dir, '{}-{}_export_log.csv'.format(subject.code, session.label))
+    log.info('Generating export log: {}'.format(export_log))
+    with open(export_log, 'w') as lf:
+        csvwriter = csv.writer(lf, delimiter=',',
+                                quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        csvwriter.writerow(['Container', 'Name', 'Status', 'Origin Path', 'Export Path', 'Archive Path'])
+        for e in export_data:
+            csvwriter.writerow([e['container'], e['name'], e['status'], e['origin_path'], e['export_path'], e['archive_path']])
 
 ###############################################################################
 
