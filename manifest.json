@@ -1,0 +1,50 @@
+{
+  "name": "session-export",
+  "label": "GRP9: Session Exporter",
+  "description": "The Session Exporter Gear will copy over data (including metadata) from a given Session, including DICOMs, and save them to the 'export_project' to be accessed by users. The Export Gear will also read DICOM header information from Flywheel metadata and generate new DICOMs that reflect the changes made. Optionally, the original data can be moved over to an <archive_project>, as configured during the gear's execution.",
+  "version": "0.0.1",
+  "custom": {
+    "gear-builder": {
+      "category": "analysis",
+      "image": "flywheel/session-export:0.0.1"
+    },
+    "flywheel": {
+      "suite": "Data Export"
+    }
+  },
+  "inputs": {
+    "api-key": {
+      "base": "api-key"
+    }
+  },
+  "config": {
+    "export_project": {
+      "type": "string",
+      "description": "Finder string (including the group) defining the project to which the session's data will be exported. E.g., gene/testproject",
+      "optional": false
+    },
+    "archive_project": {
+      "type": "string",
+      "description": "Finder string (including the group) defining the project to which the session's unmodified data will be archived. E.g., gene/testprojectarchive. If the archive project is defined, the exported session will be moved to this project.",
+      "optional": true
+    },
+    "map_flywheel_to_dicom": {
+      "type": "boolean",
+      "description": "Map Flywheel fields to DICOM fields. E.g., Subject.code==PatientId",
+      "default": true
+    },
+    "force_export": {
+      "type": "boolean",
+      "description": "Ignore existing tags denoting that a session was exported and force export.",
+      "default": true
+    }
+  },
+  "environment": {},
+  "command": "",
+  "author": "Flywheel",
+  "maintainer": "Flywheel <support@flywheel.io>",
+  "cite": "",
+  "license": "Other",
+  "source": "https://github.com/flywheel-apps/GRP-9-dicom-export",
+  "url": "https://github.com/flywheel-apps/GRP-9-dicom-export/blob/master/README.md"
+}
