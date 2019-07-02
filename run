@@ -1,0 +1,486 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import csv
+import json
+import pprint
+import zipfile
+import pydicom
+import logging
+import flywheel
+from pprint import pprint as pp
+from dicom_metadata import dicom_header_extract
+
+
+logging.basicConfig()
+log = logging.getLogger('[GRP 9]:')
+log.setLevel(logging.INFO)
+
+
+###############################################################################
+# LOCAL FUNCTION DEFINITIONS
+
+def _find_or_create_subject(fw, session, project, subject_code):
+    # Try to find if a subject with that code already exists in the project
+    subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, subject_code))
+    if not subject:
+        # If the subject does not exist in the project, make one with the same metadata
+        old_subject = session.subject
+        new_subject = flywheel.Subject(project=project.id, firstname=old_subject.firstname, code=subject_code,
+                                       lastname=old_subject.lastname, sex=old_subject.sex,
+                                       cohort=old_subject.cohort, ethnicity=old_subject.ethnicity,
+                                       race=old_subject.race, species=old_subject.species,
+                                       strain=old_subject.strain, files=old_subject.files)
+        response = fw.add_subject(new_subject)
+        subject = fw.get_subject(response)
+
+    return subject
+
+
+def _archive_session(fw, session, archive_project):
+    """Move session to archive project
+
+        'session_id', help='the id of the session to move'
+        'archive_project', help='the label of the project to move the subject to'
+    """
+
+    subject = _find_or_create_subject(fw, session, archive_project, session.subject.code)
+
+    # Move_session_to_subject (archive)
+    session.update({'subject': {'_id': subject.id}})
+
+
+def _create_archive(content_dir, arcname, zipfilepath=None):
+    """Create zip archive from content_dir"""
+    if not zipfilepath:
+        zipfilepath = content_dir + '.zip'
+    with zipfile.ZipFile(zipfilepath, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+        zf.write(content_dir, arcname)
+        for fn in os.listdir(content_dir):
+            zf.write(os.path.join(content_dir, fn), os.path.join(os.path.basename(arcname), fn))
+    return zipfilepath
+
+
+def _extract_archive(zip_file_path, extract_loaction):
+    """Extract zipfile to <zip_file_path> and return the path to the directory containing the dicoms,
+    which should be the zipfile name without the zip extension."""
+    import zipfile
+    if zipfile.is_zipfile(zip_file_path):
+        with zipfile.ZipFile(zip_file_path) as ZF:
+            ZF.extractall(extract_loaction)
+            return os.path.join(extract_loaction, ZF.namelist()[0].split('/')[0])
+    else:
+        log.warning('{} is not a Zip File!'.format(zip_file_path))
+        return None
+
+
+def _export_dicom(dicom_file, acquisition, session, subject, project, config):
+    """ For a given DICOM archive, or file(?) update the DICOM header metadata according to the
+        metadata in Flywheel.
+
+        RETURNS: <upload_file_path> path to the updated DICOM archive on disk, which will be uploaded.
+
+    """
+
+    update_keys = []
+
+    # Download the dicom archive
+    dicom_file_path = os.path.join('/tmp', dicom_file.name)
+    dicom_file.download(dicom_file_path)
+
+    # For the downloaded file, extract the metadata
+    local_dicom_header = dicom_header_extract(dicom_file_path)
+
+    # This is the header from Flywheel, which may have been modified
+    if 'header' in dicom_file.info:
+        flywheel_dicom_header = dicom_file.info['header']['dicom']
+    else:
+        log.warning('WARNING: Flywheel DICOM does not have dicom header!')
+        return dicom_file_path
+
+    # Check if headers match, if not then update local dicom files to match Flywheel Header
+    if local_dicom_header != flywheel_dicom_header:
+
+        log.info('Local DICOM header and Flywheel header do NOT match...')
+
+        # Generate a list of keys that need to be updated within the local dicom file
+        # Compare the headers, and track which keys are different
+        for key in sorted(flywheel_dicom_header.keys()):
+            if key not in local_dicom_header:
+                log.info('MISSING key: %s not found in local_header' % (key))
+            else:
+
+                # Make sure we're comapring the header from the same file...
+                if local_dicom_header['SOPInstanceUID'] != flywheel_dicom_header['SOPInstanceUID']:
+                    log.warning('WARNING: SOPInstanceUID does not match across the headers!!!')
+
+                # Check if the headers are equal
+                if local_dicom_header[key] != flywheel_dicom_header[key]:
+                    log.info('MISMATCH in key: {}'.format(key))
+                    log.info('DICOM    = {}'.format(local_dicom_header[key]))
+                    log.info('Flywheel = {}'.format(flywheel_dicom_header[key]))
+                    update_keys.append(key)
+    else:
+        log.info('Local DICOM header and Flywheel headers match!')
+
+    # If mapping to flywheel then we do that here
+    if config['map_flywheel_to_dicom']:
+
+        log.info('Mapping Flywheel attributes to local DICOMs...')
+
+        # Map Flywheel fields to DICOM fields
+        fields_map = {
+                "PatientID": subject.get('code',''),
+                "SeriesDescription": acquisition.label,
+                "PatientAge": '%sY' % str(session.get('age_years')) if session.get('age_years') else None,
+                "PatientWeight": session.get('weight',''),
+                "PatientSex": session.subject.get('sex', ''),
+                "StudyID": session.label # StudyInstanceUID if SIEMENS
+             }
+
+        # Check the flywheel_dicom_header for the fields in the map, if they are not there,
+        # or they don't match what FW has, then add/modfiy
+        for k, val in fields_map.items():
+            if k not in flywheel_dicom_header or (k in flywheel_dicom_header and flywheel_dicom_header[k] != val):
+                flywheel_dicom_header[k] = val
+
+                # Add this key to the list of keys to be updated from the FW metadata
+                if k not in update_keys:
+                    update_keys.append(k)
+
+    # If the list of update_keys is empty, then there's nothing to do with the DICOM archive,
+    # thus we just return the dicom_file_path and move on with life.
+    if not update_keys:
+        return dicom_file_path
+
+    # Iterate through the DICOM files and update the values according to the flywheel_dicom_header
+    log.info('The following keys will be updated: {}'.format(update_keys))
+    upload_file_path = _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header)
+
+
+    return upload_file_path
+
+
+def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
+    """Given a dicom archive <dicom_file_path>, iterate through a list of keys <update_keys> and
+    modify each file in the archive with the value in the passed in dict <flywheel_dicom_header>
+
+    # TRY to update they keys, log issues.
+
+    """
+    import pydicom
+
+    # Extract the archive
+    dicom_base_folder = _extract_archive(dicom_file_path, '/tmp')
+
+    # Remove the zipfile
+    os.remove(dicom_file_path)
+
+
+    # For each file in the archive, update the keys
+    dicom_files = os.listdir(dicom_base_folder)
+    log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
+    for df in sorted(dicom_files):
+        dfp = os.path.join(dicom_base_folder, df)
+        dicom = pydicom.read_file(dfp)
+        log.debug('Modifying: {}'.format(os.path.basename(dfp)))
+        for key in update_keys:
+            if key in dicom:
+                try:
+                    setattr(dicom, key, flywheel_dicom_header.get(key))
+                except:
+                    log.warning('Could not modify DICOM attribute: {}!'.format(key))
+        log.debug('Saving {}'.format(os.path.basename(dfp)))
+        dicom.save_as(dfp)
+
+
+    # Package up the archive
+    log.debug('Packaging archive: {}'.format(dicom_base_folder))
+    modified_dicom_file_path = _create_archive(dicom_base_folder, os.path.basename(dicom_base_folder))
+
+    return modified_dicom_file_path
+
+
+def _export_files(fw, acquisition, export_acquisition, session, subject, project, config):
+    """Export acquisition files to the exported acquisiton.
+
+    For each file in the acquisition:
+        1. Download the file
+            a. If the file is a DICOM file, modify the DICOM archives individual files to match
+               the appropriate metadata as exists in Flywheel.
+        2. Upload the file to the export_acquisition
+        3. Modify the file in the export_acquisition to have the same metadata
+
+    """
+
+    # Get the acquisition so that the metadata are all there.
+    acquisition = fw.get_acquisition(acquisition.id)
+
+    for f in acquisition.files:
+        log.info('Exporting %s/%s/%s/%s/%s...' % (project.label,
+                                            subject.label,
+                                            session.label,
+                                            acquisition.label,
+                                            f.name))
+        if f.type == 'dicom':
+            upload_file_path = _export_dicom(f, acquisition, session, subject, project, config)
+        else:
+            upload_file_path = os.path.join('/tmp', f.name)
+            f.download(upload_file_path)
+
+        # Upload the file to the export_acquisition
+        log.debug("Uploading %s to %s" % (f.name, export_acquisition.label))
+        export_acquisition.upload_file(upload_file_path)
+        export_acquisition.reload()
+
+        # Delete the uploaded file locally.
+        log.debug('Removing local file: %s' % (upload_file_path))
+        os.remove(upload_file_path)
+
+        # Update file metadata
+        if f.modality:
+            log.debug('Updating modality to %s for %s' % (f.modality, f.name))
+            export_acquisition.update_file(f.name, modality=f.modality)
+        if f.type:
+            log.debug('Updating type to %s for %s' % (f.type, f.name))
+            export_acquisition.update_file(f.name, type=f.type)
+        if f.classification:
+            log.debug('Updating classification to %s for %s' % (f.classification, f.name))
+            export_acquisition.update_file_classification(f.name, f.classification)
+        if f.info:
+            log.debug('Updating info for %s' % (f.name))
+            export_acquisition.update_file_info(f.name, f.info)
+
+        export_acquisition.reload()
+
+
+def main(context):
+
+    fw = context.client
+
+    ########################################################################
+    # Lookup destination projects
+
+    archive_project = {}
+    export_project = {}
+
+    if context.config.get('export_project'):
+        try:
+            export_project = fw.lookup(context.config.get('export_project'))
+            log.info('Export Project: {}'.format(context.config.get('export_project')))
+        except:
+            log.error('%s does not exist' % (context.config.get('export_project')))
+            raise BaseException()
+
+    if context.config.get('archive_project'):
+        try:
+            archive_project = fw.lookup(context.config.get('archive_project'))
+            log.info('Archive Project: {}'.format(context.config.get('archive_project')))
+        except:
+            log.error('Archive project %s could not be found!' % (context.config.get('archive_project')))
+            raise BaseException()
+
+
+    ########################################################################
+    # Get the session subject and project and check for export/force
+
+    if fw.get_analysis(context.destination['id']).parent['type'] != 'session':
+        log.critical('ONLY SESSION LEVEL EXPORTS ARE SUPPORTED AT THIS TIME!')
+        raise BaseException
+
+    session = fw.get_session(fw.get_analysis(context.destination['id']).parent['id'])
+    subject = fw.get_subject(session.subject.id)
+    project = fw.get_project(session.parents.project)
+
+    exported = True if ('exported' in session.get('tags', [])) else False
+    if exported and context.config.get(force_export) == False:
+        log.warning('Session {}/{} has already been exported and <force_export> = False. Nothing to do!'.format(subject.code, session.label))
+        return
+
+
+    ########################################################################
+    # Create the export_data dict
+    export_data = []
+    export_instance = {
+                        "container": "",
+                        "name": "",
+                        "status": "",
+                        "origin_path": "",
+                        "export_path": "",
+                        "archive_path": ""
+                    }
+
+
+    ########################################################################
+    # Create the subject/session container
+
+    # What we want at the end of this is the export session
+    export_session = None
+
+    # Check for subject in a given project
+    subj = export_project.subjects.find_first('code=%s' % subject.code)
+
+
+    ########################################################################
+    # Create Subject
+
+    sub_export = export_instance.copy()
+    sub_export['container'] = "subject"
+    sub_export['name'] = subject.code
+    sub_export['origin_path'] = '{}/{}/{}'.format(project.group, project.label, subject.code)
+    sub_export['export_path'] = '{}/{}/{}'.format(export_project.group, export_project.label, subject.code)
+    if archive_project:
+        sub_export['archive_path'] = '{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code)
+
+    if not subj:
+        log.info('Subject %s does not exist in project %s.' % (subject.code, export_project.label))
+        log.info('CREATING SUBJECT CONTAINER')
+        sub_export['status'] = "created"
+        subject_keys = ['code',
+                        'cohort',
+                        'ethnicity',
+                        'firstname',
+                        'info',
+                        'label',
+                        'lastname',
+                        'race',
+                        'sex',
+                        'species',
+                        'strain',
+                        'tags',
+                        'type'
+                       ]
+        subject_metadata = {}
+        for key in subject_keys:
+            value = subject.get(key)
+            if value:
+                subject_metadata[key] = value
+
+        # Add the subject to the project
+        subj = export_project.add_subject(subject_metadata)
+
+        log.info('Created %s in %s' % (subj.code, export_project.label))
+
+    else:
+        log.info('Found existing subject %s in project: %s. Using existing container.' % (subj.code, export_project.label))
+        sub_export['status'] = "used existing"
+
+    export_data.append(sub_export)
+
+    ########################################################################
+    # Create the export_session
+
+    log.info('CREATING SESSION CONTAINER {} IN {}'.format(subj.label, export_project.label))
+
+    # Data logging
+    session_export = export_instance.copy()
+    session_export['container'] = "session"
+    session_export['status'] = "created"
+    session_export['name'] = session.label
+    session_export['origin_path'] = '{}/{}/{}/{}'.format(project.group, project.label, subject.code, session.label)
+    session_export['export_path'] = '{}/{}/{}/{}'.format(export_project.group, export_project.label, subject.code, session.label)
+    if archive_project:
+        session_export['archive_path'] = '{}/{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code, session.label)
+    export_data.append(session_export)
+
+    session_keys = ['age',
+                    'info',
+                    'label',
+                    'operator',
+                    'timestamp',
+                    'timezone',
+                    'weight'
+                   ]
+    session_metadata = {}
+    for key in session_keys:
+        value = session.get(key)
+        if value:
+            session_metadata[key] = value
+
+    # Add session to the subject
+    export_session = subj.add_session(session_metadata)
+
+    for tag in session.tags:
+        export_session.add_tag(tag)
+
+
+
+    ########################################################################
+    # For each acquisition, create the export_acquisition, upload and modify the files
+
+    num_acq = len(session.acquisitions())
+    log.info('EXPORTING {} ACQUISITIONS...'.format(num_acq))
+    acq_count = 0
+    for acq in session.acquisitions():
+
+        # Data logging
+        acquisition_export = export_instance.copy()
+        acquisition_export['container'] = "acquisition"
+        acquisition_export['status'] = "created"
+        acquisition_export['name'] = acq.label
+        acquisition_export['origin_path'] = '{}/{}/{}/{}/{}'.format(project.group, project.label, subject.code, session.label, acq.label)
+        acquisition_export['export_path'] = '{}/{}/{}/{}/{}'.format(export_project.group, export_project.label, subject.code, session.label, acq.label)
+        if archive_project:
+            acquisition_export['archive_path'] = '{}/{}/{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code, session.label, acq.label)
+        export_data.append(acquisition_export)
+
+        acq_count +=1
+        log.info('ACQUISITION {}/{}'.format(acq_count, num_acq))
+        log.info('CREATING ACQUISITION CONTAINER: [label=%s]' % (acq.label))
+        acquisition_keys = ['info',
+                            'label',
+                            'timestamp',
+                            'timezone',
+                           ]
+        acquisition_metadata = {}
+        for key in acquisition_keys:
+            value = acq.get(key)
+            if value:
+                acquisition_metadata[key] = value
+
+        # Add acquisition to the session
+        export_acquisition = export_session.add_acquisition(acquisition_metadata)
+
+        for tag in acq.tags:
+            export_acquisition.add_tag(tag)
+
+        # Export the individual files in each acquisition
+        log.info('Exporting files to %s...' % (export_acquisition.label))
+        _export_files(fw, acq, export_acquisition, session, subject, project, context.config)
+
+    log.info('All acquisitions exported.')
+    if 'EXPORTED' not in session.get('tags', []):
+        log.info('Adding "EXPORTED" tag to {}.'.format(session.label))
+        session.add_tag('EXPORTED')
+
+
+    ########################################################################
+    # Optionally move the session to the archive_project or tag the session as exported
+
+    if archive_project:
+        log.info('ARCHIVING SESSION TO PROJECT: {}'.format(archive_project.label))
+        _archive_session(fw, session, archive_project)
+
+
+    ########################################################################
+    # Generate export log
+
+    export_log = os.path.join(context.output_dir, '{}-{}_export_log.csv'.format(subject.code, session.label))
+    log.info('Generating export log: {}'.format(export_log))
+    with open(export_log, 'w') as lf:
+        csvwriter = csv.writer(lf, delimiter=',',
+                                quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        csvwriter.writerow(['Container', 'Name', 'Status', 'Origin Path', 'Export Path', 'Archive Path'])
+        for e in export_data:
+            csvwriter.writerow([e['container'], e['name'], e['status'], e['origin_path'], e['export_path'], e['archive_path']])
+
+###############################################################################
+
+if __name__ == '__main__':
+    with flywheel.GearContext() as context:
+        if context.config.get('log_debug'):
+            log.setLevel(logging.DEBUG)
+        log.info('{}'.format(context.config))
+        main(context)
+        log.info('DONE!')
