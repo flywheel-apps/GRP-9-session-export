@@ -52,9 +52,9 @@ Currently, if modifications are made to the header information via metadata chan
 9. Optionally, this will move the session from the Quarantine Project to enable a 	queue-like workflow.
 
 
-##Related Roadmap Work
+## Related Roadmap Work
 
-###File Versioning
+### File Versioning
 Files stored in Flywheel should be stored with versioning information as well as the ability to access and revive past versions. This would allow a user to update the file metadata and the file data itself in place without losing history or original data.  May also need to provide finer grained access control and permissioning on prior file versions.
 
 ### Bulk Editing of Metadata
