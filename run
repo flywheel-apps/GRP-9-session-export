@@ -253,6 +253,10 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
         if f.modality:
             log.debug('Updating modality to %s for %s' % (f.modality, f.name))
             export_acquisition.update_file(f.name, modality=f.modality)
+        if not f.modality and f.name.endswith('mriqc.qa.html'):
+            # Special case - mriqc output files do not have modality set, so
+            # we must set the modality prior to the classification to avoid errors.
+            export_acquisition.update_file(f.name, modality='MR')
         if f.type:
             log.debug('Updating type to %s for %s' % (f.type, f.name))
             export_acquisition.update_file(f.name, type=f.type)
