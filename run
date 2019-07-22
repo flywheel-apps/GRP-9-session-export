@@ -78,9 +78,9 @@ def _extract_archive(zip_file_path, extract_loaction):
         else:
             extract_dest = os.path.join(extract_loaction, os.path.basename(zip_file_path).strip('.zip'))
             if not os.path.isdir(extract_dest):
-                print('Creating extract directory: {}'.format(extract_dest))
+                log.debug('Creating extract directory: {}'.format(extract_dest))
                 os.mkdir(extract_dest)
-            print('Extracting dicom archive to: {}'.format(extract_dest))
+            log.debug('Extracting dicom archive to: {}'.format(extract_dest))
             ZF.extractall(extract_dest)
             return extract_dest
 
