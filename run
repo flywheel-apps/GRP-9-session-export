@@ -78,9 +78,9 @@ def _extract_archive(zip_file_path, extract_loaction):
         else:
             extract_dest = os.path.join(extract_loaction, os.path.basename(zip_file_path).strip('.zip'))
             if not os.path.isdir(extract_dest):
-                print('Creating extract directory: {}'.format(extract_dest))
+                log.debug('Creating extract directory: {}'.format(extract_dest))
                 os.mkdir(extract_dest)
-            print('Extracting dicom archive to: {}'.format(extract_dest))
+            log.debug('Extracting dicom archive to: {}'.format(extract_dest))
             ZF.extractall(extract_dest)
             return extract_dest
 
@@ -242,8 +242,22 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
 
         # Upload the file to the export_acquisition
         log.debug("Uploading %s to %s" % (f.name, export_acquisition.label))
-        export_acquisition.upload_file(upload_file_path)
-        export_acquisition.reload()
+
+        # Add logic around retrying failed uploads
+        max_attempts = 5
+        attempt = 0
+        while attempt < max_attempts:
+            attempt +=1
+            s = export_acquisition.upload_file(upload_file_path)
+            log.info('Upload status = {}'.format(s))
+            export_acquisition = fw.get_acquisition(export_acquisition.id)
+            file_names = [ x.name for x in export_acquisition.files ]
+            log.debug(file_names)
+            if os.path.basename(upload_file_path) not in file_names:
+                log.warning('Upload failed for {} - retrying...'.format(os.path.basename(upload_file_path)))
+            else:
+                log.info('Successfully exported: {}'.format(os.path.basename(upload_file_path)))
+                break
 
         # Delete the uploaded file locally.
         log.debug('Removing local file: %s' % (upload_file_path))
