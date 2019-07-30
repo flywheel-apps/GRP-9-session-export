@@ -62,7 +62,7 @@ def _create_archive(content_dir, arcname, zipfilepath=None):
     return zipfilepath
 
 
-def _extract_archive(zip_file_path, extract_loaction):
+def _extract_archive(zip_file_path, extract_location):
     """Extract zipfile to <zip_file_path> and return the path to the directory containing the dicoms,
     which should be the zipfile name without the zip extension."""
     import zipfile
@@ -72,15 +72,15 @@ def _extract_archive(zip_file_path, extract_loaction):
 
     with zipfile.ZipFile(zip_file_path) as ZF:
         if '/' in ZF.namelist()[0]:
-            extract_dest = os.path.join(extract_loaction, ZF.namelist()[0].split('/')[0])
-            ZF.extractall(extract_loaction)
+            extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
+            ZF.extractall(extract_location)
             return extract_dest
         else:
-            extract_dest = os.path.join(extract_loaction, os.path.basename(zip_file_path).strip('.zip'))
+            extract_dest = os.path.join(extract_location, os.path.basename(zip_file_path).split('.zip')[0])
             if not os.path.isdir(extract_dest):
                 log.debug('Creating extract directory: {}'.format(extract_dest))
                 os.mkdir(extract_dest)
-            log.debug('Extracting dicom archive to: {}'.format(extract_dest))
+            log.debug('Extracting {} archive to: {}'.format(zip_file_path, extract_dest))
             ZF.extractall(extract_dest)
             return extract_dest
 
