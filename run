@@ -308,7 +308,7 @@ def _cleanup(fw, creatio):
         log.info("Deleting {} subject containers".format(len(subjects)))
         for s in subjects:
             log.debug(s)
-            fw.delete_subject(x['id'])
+            fw.delete_subject(s['id'])
 
 
 def main(context):
@@ -488,6 +488,9 @@ def main(context):
         num_acq = len(session.acquisitions())
         log.info('EXPORTING {} ACQUISITIONS...'.format(num_acq))
         acq_count = 0
+        if len(session.acquisitions()) == 0:
+            log.warning('NO ACQUISITIONS FOUND ON THE SESSION! Resulting session will have no acquisitions.')
+
         for acq in session.acquisitions():
 
             # Data logging
@@ -558,11 +561,11 @@ def main(context):
                 csvwriter.writerow([e['container'], e['name'], e['status'], e['origin_path'], e['export_path'], e['archive_path']])
     except:
         # Something failed - so we cleanup the session
-        log.warning('Errors detected!')
+        log.warning('ERRORS DETECTED!')
         if context.config.get('cleanup'):
-            log.info('Cleaning up...')
+            log.info('CLEANING UP...')
             _cleanup(fw, creatio)
-        log.warning('raising original exception:')
+        log.warning('Raising original exception...')
         raise
 
 
