@@ -337,6 +337,15 @@ def main(context):
             log.error('Archive project %s could not be found!' % (context.config.get('archive_project')))
             raise BaseException()
 
+    ## CHECK FOR PROJECT RULES
+    if context.config.get('check_gear_rules'):
+        log.info('Checking for enabled gears on the export_project...')
+        if any([x for x in fw.get_project_rules(export_project.id) if x.disabled != True]):
+            message = "Aborting Session Export: {} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior.".format(context.config.get('export_project'))
+            log.error(message)
+            raise BaseException('Session Export Error')
+        else:
+            log.info('No enabled rules were found. Moving on...')
 
     ########################################################################
     # Get the session subject and project and check for export/force
