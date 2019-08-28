@@ -1,12 +1,12 @@
 {
   "name": "session-export",
-  "label": "GRP-9: Session Exporter",
+  "label": "GRP-9: Session Export",
   "description": "Export data (including metadata) from a given session to the specified 'export_project'. The gear will also read DICOM header information from Flywheel metadata and modify DICOM headers to reflect the changes made. Optionally, original data can be 'archived' to an <archive_project>, as configured during the gear execution. The exported, and optionally archived, session will be tagged as appropriate using the 'EXPORTED' tag. At present this gear can only be run at the session level. Output is an export log in csv format.",
-  "version": "0.2.4",
+  "version": "1.0.0",
   "custom": {
     "gear-builder": {
       "category": "analysis",
-      "image": "flywheel/session-export:0.2.4"
+      "image": "flywheel/session-export:1.0.0"
     },
     "flywheel": {
       "suite": "Data Export"
@@ -20,27 +20,37 @@
   "config": {
     "export_project": {
       "type": "string",
-      "description": "Finder string (including the group) defining the project to which the session's data will be exported. E.g., gene/testproject",
+      "description": "Finder string (including the group) defining the project to which the session's data will be exported. E.g., gene/testproject. Default=False",
       "optional": false
     },
     "archive_project": {
       "type": "string",
-      "description": "Finder string (including the group) defining the project to which the session's unmodified data will be archived. E.g., gene/testprojectarchive. If the archive project is defined, the exported session will be moved to this project.",
+      "description": "Finder string (including the group) defining the project to which the session's unmodified data will be archived. E.g., gene/testprojectarchive. If the archive project is defined, the exported session will be moved to this project. Default=True",
       "optional": true
     },
     "map_flywheel_to_dicom": {
       "type": "boolean",
-      "description": "Map Flywheel fields to DICOM fields. E.g., Subject.code==PatientId",
+      "description": "Map Flywheel fields to DICOM fields. E.g., Subject.code==PatientId. Default=True",
       "default": true
     },
     "force_export": {
       "type": "boolean",
-      "description": "Ignore existing tags denoting that a session was exported and force export.",
+      "description": "Ignore existing tags denoting that a session was exported and force export. Default=True",
+      "default": true
+    },
+    "check_gear_rules": {
+      "type": "boolean",
+      "description": "Check for configured Gear rules on the export_project and refuse to export data if there are rules configured. Default=True",
       "default": true
     },
     "log_debug": {
       "type": "boolean",
-      "description": "Turn on debug logger.",
+      "description": "Turn on debug logger. Default=True",
+      "default": true
+    },
+    "cleanup": {
+      "type": "boolean",
+      "description": "In the event of an error, this option will remove all created containers. Default=True",
       "default": true
     }
   },
