@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import re
 import sys
 import csv
 import json
@@ -11,7 +12,7 @@ import logging
 import flywheel
 from pprint import pprint as pp
 from dicom_metadata import dicom_header_extract
-
+from util import quote_numeric_string
 
 logging.basicConfig()
 log = logging.getLogger('[GRP 9]:')
@@ -23,6 +24,7 @@ log.setLevel(logging.INFO)
 
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
+    subject_code = quote_numeric_string(subject_code)
     subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, subject_code))
     if not subject:
         # If the subject does not exist in the project, make one with the same metadata
@@ -359,7 +361,7 @@ def main(context):
     project = fw.get_project(session.parents.project)
 
     exported = True if ('exported' in session.get('tags', [])) else False
-    if exported and context.config.get(force_export) == False:
+    if exported and context.config.get('force_export') == False:
         log.warning('Session {}/{} has already been exported and <force_export> = False. Nothing to do!'.format(subject.code, session.label))
         return
 
@@ -392,7 +394,8 @@ def main(context):
         export_session = None
 
         # Check for subject in a given project
-        subj = export_project.subjects.find_first('code=%s' % subject.code)
+
+        subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
 
 
         ########################################################################
