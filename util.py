@@ -17,7 +17,7 @@ def quote_numeric_string(input_str):
     if not isinstance(input_str, str):
         log.warning(f'Expected {input_str} to be a string. Is type: {type(input_str)}. Attempting to coerce to str...')
         input_str = str(input_str)
-    if re.match(r'^[\d]+$', input_str):
+    if re.match(r'^[\d]+[\.]?[\d]*$', input_str):
         output_str = f'"{input_str}"'
     else:
         output_str = input_str
