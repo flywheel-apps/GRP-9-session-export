@@ -24,8 +24,8 @@ log.setLevel(logging.INFO)
 
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
-    subject_code = quote_numeric_string(subject_code)
-    subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, subject_code))
+    query_code = quote_numeric_string(subject_code)
+    subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
     if not subject:
         # If the subject does not exist in the project, make one with the same metadata
         old_subject = session.subject
