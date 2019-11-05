@@ -472,7 +472,8 @@ def main(context):
                         'operator',
                         'timestamp',
                         'timezone',
-                        'weight'
+                        'weight',
+                        'uid'
                        ]
         session_metadata = {}
         for key in session_keys:
@@ -523,6 +524,7 @@ def main(context):
                                 'label',
                                 'timestamp',
                                 'timezone',
+                                'uid'
                                ]
             acquisition_metadata = {}
             for key in acquisition_keys:
