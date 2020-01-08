@@ -5,6 +5,7 @@ import re
 import sys
 import csv
 import json
+import time
 import pprint
 import zipfile
 import pydicom
@@ -29,13 +30,31 @@ def _find_or_create_subject(fw, session, project, subject_code):
     if not subject:
         # If the subject does not exist in the project, make one with the same metadata
         old_subject = session.subject
-        new_subject = flywheel.Subject(project=project.id, firstname=old_subject.firstname, code=subject_code,
-                                       lastname=old_subject.lastname, sex=old_subject.sex,
-                                       cohort=old_subject.cohort, ethnicity=old_subject.ethnicity,
-                                       race=old_subject.race, species=old_subject.species,
-                                       strain=old_subject.strain, files=old_subject.files)
-        response = fw.add_subject(new_subject)
-        subject = fw.get_subject(response)
+        new_subject = flywheel.Subject(project=project.id,
+                                       firstname=old_subject.firstname,
+                                       code=subject_code,
+                                       lastname=old_subject.lastname,
+                                       sex=old_subject.sex,
+                                       cohort=old_subject.cohort,
+                                       ethnicity=old_subject.ethnicity,
+                                       race=old_subject.race,
+                                       species=old_subject.species,
+                                       strain=old_subject.strain,
+                                       files=old_subject.files)
+
+        try:
+            # Check here as the subject may have been created elsewhere async
+            response = fw.add_subject(new_subject)
+            subject = fw.get_subject(response)
+        except flywheel.ApiException as e:
+            log.warning('API Error when generating subject: {} -- {}'.format(e.status, e.reason))
+            log.info('Looking again for subject...')
+            time.sleep(2)
+            subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
+        if subject:
+           log.info('... found subject {}'.format(subject.code))
+        else:
+           raise
 
     return subject
 
