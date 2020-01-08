@@ -196,7 +196,7 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
     for df in sorted(dicom_files):
         dfp = os.path.join(dicom_base_folder, df)
-        dicom = pydicom.read_file(dfp)
+        dicom = pydicom.read_file(dfp, force=True)
         log.debug('Modifying: {}'.format(os.path.basename(dfp)))
         for key in update_keys:
             if key in dicom:
