@@ -42,19 +42,21 @@ def _find_or_create_subject(fw, session, project, subject_code):
                                        strain=old_subject.strain,
                                        files=old_subject.files)
 
+        # Attempt to create the subject. This may fail as a batch-run could
+        # result in the subject having been created already, thus we try/except
+        # and look for the subject again.
         try:
-            # Check here as the subject may have been created elsewhere async
             response = fw.add_subject(new_subject)
             subject = fw.get_subject(response)
         except flywheel.ApiException as e:
-            log.warning('API Error when generating subject: {} -- {}'.format(e.status, e.reason))
-            log.info('Looking again for subject...')
+            log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
+            log.info('Attempting to find subject...')
             time.sleep(2)
             subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
-        if subject:
-           log.info('... found subject {}'.format(subject.code))
-        else:
-           raise
+            if subject:
+               log.info('... found subject {}'.format(subject.code))
+            else:
+               raise
 
     return subject
 
