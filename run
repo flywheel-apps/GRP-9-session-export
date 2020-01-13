@@ -130,7 +130,9 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
     if 'header' in dicom_file.info:
         flywheel_dicom_header = dicom_file.info['header']['dicom']
     else:
-        log.warning('WARNING: Flywheel DICOM does not have dicom header!')
+        log.warning('WARNING: Flywheel DICOM does not have DICOM header at info.header.dicom!')
+        if config['map_flywheel_to_dicom']:
+            log.warning('WARNING! map_flywheel_to_dicom is True, however there is no DICOM header information in Flywheel. Please run GRP-3 (medatadata extraction) to read DICOM header data into Flywheel.')
         return dicom_file_path
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
