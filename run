@@ -476,7 +476,7 @@ def main(context):
         ########################################################################
         # Create the export_session
 
-        log.info('CREATING SESSION CONTAINER {} IN {}'.format(subj.label, export_project.label))
+        log.info('CREATING SESSION CONTAINER {} IN {}/{}'.format(session.label, export_project.label, subject.label))
 
         # Data logging
         session_export = export_instance.copy()
