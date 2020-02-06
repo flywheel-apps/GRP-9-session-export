@@ -234,7 +234,7 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
                     except:
                         log.warning('Could not modify DICOM attribute: {}!'.format(key))
                 else:
-                    log.warning('{} key is empty in Flywheel [{}={}]. DICOM key [{}] will remain={}'.format(key, key, key, flywheel_dicom_header.get(key), dicom.get(key)))
+                    log.warning('{} key is empty in Flywheel [{}={}]. DICOM header will remain [{}={}]'.format(key, key, flywheel_dicom_header.get(key), key, dicom.get(key)))
         log.debug('Saving {}'.format(os.path.basename(dfp)))
         try:
             dicom.save_as(dfp)
