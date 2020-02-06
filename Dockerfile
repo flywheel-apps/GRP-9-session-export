@@ -1,14 +1,17 @@
 # FROM python:3-alpine
-FROM flywheel/dicom-metadata-import-grp-3:1.0.1
+FROM python:3.7
 MAINTAINER Flywheel <support@flywheel.io>
 
 RUN pip install \
       pip==19.3.1 \
-      flywheel-sdk==10.2.1 \
-      pydicom==1.3.0 \
+      flywheel-sdk==10.7.1 \
+      pydicom==1.4.1 \
       pytz==2019.3 \
       tzlocal==2.0.0 \
-      jsonschema==3.1.1
+      jsonschema==3.1.1 \
+      nibabel \
+      pandas \
+      numpy
 
 WORKDIR /flywheel/v0
 

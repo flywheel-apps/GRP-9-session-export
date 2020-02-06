@@ -5,6 +5,7 @@ import re
 import sys
 import csv
 import json
+import time
 import pprint
 import zipfile
 import pydicom
@@ -29,13 +30,33 @@ def _find_or_create_subject(fw, session, project, subject_code):
     if not subject:
         # If the subject does not exist in the project, make one with the same metadata
         old_subject = session.subject
-        new_subject = flywheel.Subject(project=project.id, firstname=old_subject.firstname, code=subject_code,
-                                       lastname=old_subject.lastname, sex=old_subject.sex,
-                                       cohort=old_subject.cohort, ethnicity=old_subject.ethnicity,
-                                       race=old_subject.race, species=old_subject.species,
-                                       strain=old_subject.strain, files=old_subject.files)
-        response = fw.add_subject(new_subject)
-        subject = fw.get_subject(response)
+        new_subject = flywheel.Subject(project=project.id,
+                                       firstname=old_subject.firstname,
+                                       code=subject_code,
+                                       lastname=old_subject.lastname,
+                                       sex=old_subject.sex,
+                                       cohort=old_subject.cohort,
+                                       ethnicity=old_subject.ethnicity,
+                                       race=old_subject.race,
+                                       species=old_subject.species,
+                                       strain=old_subject.strain,
+                                       files=old_subject.files)
+
+        # Attempt to create the subject. This may fail as a batch-run could
+        # result in the subject having been created already, thus we try/except
+        # and look for the subject again.
+        try:
+            response = fw.add_subject(new_subject)
+            subject = fw.get_subject(response)
+        except flywheel.ApiException as e:
+            log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
+            log.info('Attempting to find subject...')
+            time.sleep(2)
+            subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
+            if subject:
+               log.info('... found subject {}'.format(subject.code))
+            else:
+               raise
 
     return subject
 
@@ -109,7 +130,9 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
     if 'header' in dicom_file.info:
         flywheel_dicom_header = dicom_file.info['header']['dicom']
     else:
-        log.warning('WARNING: Flywheel DICOM does not have dicom header!')
+        log.warning('WARNING: Flywheel DICOM does not have DICOM header at info.header.dicom!')
+        if config['map_flywheel_to_dicom']:
+            log.warning('WARNING! map_flywheel_to_dicom is True, however there is no DICOM header information in Flywheel. Please run GRP-3 (medatadata extraction) to read DICOM header data into Flywheel.')
         return dicom_file_path
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
@@ -196,16 +219,28 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
     for df in sorted(dicom_files):
         dfp = os.path.join(dicom_base_folder, df)
-        dicom = pydicom.read_file(dfp)
+        try:
+            dicom = pydicom.read_file(dfp, force=False)
+        except:
+            log.warning('{} could not be parsed! Attempting to force pydicom to read the file!'.format(df))
+            dicom = pydicom.read_file(dfp, force=True)
         log.debug('Modifying: {}'.format(os.path.basename(dfp)))
         for key in update_keys:
             if key in dicom:
-                try:
-                    setattr(dicom, key, flywheel_dicom_header.get(key))
-                except:
-                    log.warning('Could not modify DICOM attribute: {}!'.format(key))
+                if flywheel_dicom_header.get(key):
+                    try:
+                        log.debug('key={}, value={}'.format(key, flywheel_dicom_header.get(key)))
+                        setattr(dicom, key, flywheel_dicom_header.get(key))
+                    except:
+                        log.warning('Could not modify DICOM attribute: {}!'.format(key))
+                else:
+                    log.warning('{} key is empty in Flywheel [{}={}]. DICOM header will remain [{}={}]'.format(key, key, flywheel_dicom_header.get(key), key, dicom.get(key)))
         log.debug('Saving {}'.format(os.path.basename(dfp)))
-        dicom.save_as(dfp)
+        try:
+            dicom.save_as(dfp)
+        except Exception as err:
+            log.error('PYDICOM encountered an error when attempting to save {}!: \n{}'.format(dfp, err))
+            raise
 
 
     # Package up the archive
@@ -453,7 +488,7 @@ def main(context):
         ########################################################################
         # Create the export_session
 
-        log.info('CREATING SESSION CONTAINER {} IN {}'.format(subj.label, export_project.label))
+        log.info('CREATING SESSION CONTAINER {} IN {}/{}'.format(session.label, export_project.label, subject.label))
 
         # Data logging
         session_export = export_instance.copy()
@@ -579,8 +614,7 @@ def main(context):
         if context.config.get('cleanup'):
             log.info('CLEANING UP...')
             _cleanup(fw, creatio)
-        log.warning('Raising original exception...')
-        raise
+        os._exit(1)
 
 
 ###############################################################################
@@ -592,3 +626,4 @@ if __name__ == '__main__':
         log.info('{}'.format(context.config))
         main(context)
         log.info('DONE!')
+        os._exit(0)
