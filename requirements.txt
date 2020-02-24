@@ -1,0 +1,5 @@
+jsonschema~=3.2.0
+flywheel-sdk~=10.7.4
+pydicom~=1.4.2
+pytz~=2019.3
+tzlocal~=2.0.0
