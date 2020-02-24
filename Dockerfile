@@ -1,17 +1,9 @@
-# FROM python:3-alpine
-FROM python:3.7
+FROM python:3.7-slim-stretch
 MAINTAINER Flywheel <support@flywheel.io>
 
-RUN pip install \
-      pip==19.3.1 \
-      flywheel-sdk==10.7.1 \
-      pydicom==1.4.1 \
-      pytz==2019.3 \
-      tzlocal==2.0.0 \
-      jsonschema==3.1.1 \
-      nibabel \
-      pandas \
-      numpy
+COPY requirements.txt /tmp
+
+RUN pip install -r /tmp/requirements.txt
 
 WORKDIR /flywheel/v0
 
