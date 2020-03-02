@@ -608,9 +608,9 @@ def main(context):
             csvwriter.writerow(['Container', 'Name', 'Status', 'Origin Path', 'Export Path', 'Archive Path'])
             for e in export_data:
                 csvwriter.writerow([e['container'], e['name'], e['status'], e['origin_path'], e['export_path'], e['archive_path']])
-    except:
+    except Exception:
         # Something failed - so we cleanup the session
-        log.warning('ERRORS DETECTED!')
+        log.exception('ERRORS DETECTED!')
         if context.config.get('cleanup'):
             log.info('CLEANING UP...')
             _cleanup(fw, creatio)
