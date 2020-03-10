@@ -468,17 +468,29 @@ def main(context):
                 if value:
                     subject_metadata[key] = value
 
-            # Add the subject to the project
-            subj = export_project.add_subject(subject_metadata)
+            # Attempt to create the subject. This may fail as a batch-run could
+            # result in the subject having been created already, thus we try/except
+            # and look for the subject again.
+            try:
+                subj = export_project.add_subject(subject_metadata)
+                log.info('Created %s in %s' % (subj.code, export_project.label))
 
-            log.info('Created %s in %s' % (subj.code, export_project.label))
-
-            c = creatio_instance.copy()
-            c['container'] = 'subject'
-            c['id'] = subj.id
-            c['new'] = True
-            creatio.append(c)
-
+                c = creatio_instance.copy()
+                c['container'] = 'subject'
+                c['id'] = subj.id
+                c['new'] = True
+                creatio.append(c)
+            except flywheel.ApiException as e:
+                log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
+                log.info('Attempting to find subject...')
+                time.sleep(2)
+                subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
+                if subj:
+                    log.info('... found existing subject %s in project: %s. Using existing container.'
+                             % (subj.code, export_project.label))
+                    sub_export['status'] = "used existing"
+                else:
+                    raise
         else:
             log.info('Found existing subject %s in project: %s. Using existing container.' % (subj.code, export_project.label))
             sub_export['status'] = "used existing"
