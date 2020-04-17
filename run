@@ -552,7 +552,8 @@ def main(context):
             log.warning('NO ACQUISITIONS FOUND ON THE SESSION! Resulting session will have no acquisitions.')
 
         for acq in session.acquisitions():
-
+            # Reload the acquisition to fully populate the info
+            acq = acq.reload()
             # Data logging
             acquisition_export = export_instance.copy()
             acquisition_export['container'] = "acquisition"
