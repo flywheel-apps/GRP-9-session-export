@@ -1,0 +1,4 @@
+pydicom~=1.4.2
+pytest
+pytest-cov
+

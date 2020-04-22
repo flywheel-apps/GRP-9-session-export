@@ -8,12 +8,12 @@ RUN pip install -r /tmp/requirements.txt
 WORKDIR /flywheel/v0
 
 COPY manifest.json \
-     run \
+     run.py \
      util.py \
      dicom_metadata.py \
      Dockerfile \
      ./
-RUN chmod +x run dicom_metadata.py util.py
+RUN chmod +x run.py dicom_metadata.py util.py
 
 
-ENTRYPOINT ["/flywheel/v0/run"]
+ENTRYPOINT ["/flywheel/v0/run.py"]
