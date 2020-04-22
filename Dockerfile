@@ -13,6 +13,5 @@ COPY manifest.json \
      dicom_metadata.py \
      Dockerfile \
      ./
-RUN chmod +x run.py
 
-ENTRYPOINT ["/flywheel/v0/run.py"]
+RUN chmod +x run.py
