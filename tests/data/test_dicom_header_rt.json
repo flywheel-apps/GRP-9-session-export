@@ -1,0 +1,164 @@
+{
+    "AccessionNumber": "1", 
+    "InstanceCreationDate": "20091223", 
+    "InstanceCreationTime": "123840", 
+    "InstanceCreatorUID": "1.2.826.0.1.3680043.8.498", 
+    "InstanceNumber": 1, 
+    "Manufacturer": "pydicom", 
+    "ManufacturerModelName": "TPS", 
+    "Modality": "RTSTRUCT", 
+    "OperatorsName": [
+        "dmason"
+    ], 
+    "PatientBirthDate": "19691231", 
+    "PatientID": "tPhantom30sep", 
+    "PatientName": "Test^Phantom30sep", 
+    "PatientPosition": "HFS", 
+    "PatientSex": "M", 
+    "ROIContourSequence": [
+        {
+            "ContourSequence": [
+                {
+                    "ContourGeometricType": "CLOSED_PLANAR", 
+                    "ContourNumber": 1, 
+                    "NumberOfContourPoints": 5
+                }, 
+                {
+                    "ContourGeometricType": "CLOSED_PLANAR", 
+                    "ContourNumber": 2, 
+                    "NumberOfContourPoints": 6
+                }, 
+                {
+                    "ContourGeometricType": "CLOSED_PLANAR", 
+                    "ContourNumber": 3, 
+                    "NumberOfContourPoints": 6
+                }
+            ], 
+            "ROIDisplayColor": [
+                220.0, 
+                160.0, 
+                120.0
+            ], 
+            "ReferencedROINumber": 1
+        }, 
+        {
+            "ContourSequence": [
+                {
+                    "ContourGeometricType": "POINT", 
+                    "ContourNumber": 1, 
+                    "NumberOfContourPoints": 1
+                }
+            ], 
+            "ROIDisplayColor": [
+                255.0, 
+                64.0, 
+                255.0
+            ], 
+            "ReferencedROINumber": 2
+        }, 
+        {
+            "ContourSequence": [
+                {
+                    "ContourGeometricType": "POINT", 
+                    "ContourNumber": 1, 
+                    "NumberOfContourPoints": 1
+                }
+            ], 
+            "ROIDisplayColor": [
+                255.0, 
+                64.0, 
+                255.0
+            ], 
+            "ReferencedROINumber": 3
+        }
+    ], 
+    "RTROIObservationsSequence": [
+        {
+            "ObservationNumber": 1, 
+            "ROIInterpreter": "", 
+            "ROIObservationDescription": "patient", 
+            "ROIObservationLabel": "patient", 
+            "ROIPhysicalPropertiesSequence": [
+                {
+                    "ROIPhysicalProperty": "REL_ELEC_DENSITY", 
+                    "ROIPhysicalPropertyValue": 1.0
+                }
+            ], 
+            "RTROIInterpretedType": "EXTERNAL", 
+            "ReferencedROINumber": 1
+        }, 
+        {
+            "ObservationNumber": 2, 
+            "ROIInterpreter": "", 
+            "ROIObservationDescription": "Isocenter Beam 1", 
+            "ROIObservationLabel": "Isocenter 1", 
+            "RTROIInterpretedType": "ISOCENTER", 
+            "ReferencedROINumber": 2
+        }, 
+        {
+            "ObservationNumber": 3, 
+            "ROIInterpreter": "", 
+            "ROIObservationDescription": "Isocenter Beam 2", 
+            "ROIObservationLabel": "Isocenter 2", 
+            "RTROIInterpretedType": "ISOCENTER", 
+            "ReferencedROINumber": 3
+        }
+    ], 
+    "ReferencedFrameOfReferenceSequence": [
+        {
+            "FrameOfReferenceUID": "1.2.826.0.1.3680043.8.498.2010020400001.2", 
+            "RTReferencedStudySequence": [
+                {
+                    "RTReferencedSeriesSequence": [
+                        {
+                            "SeriesInstanceUID": "1.2.826.0.1.3680043.8.498.2010020400001.2.1.1"
+                        }
+                    ], 
+                    "ReferencedSOPClassUID": "1.2.840.10008.3.1.2.3.1", 
+                    "ReferencedSOPInstanceUID": "1.2.826.0.1.3680043.8.498.2010020400001.2.1"
+                }
+            ]
+        }
+    ], 
+    "SOPClassUID": "1.2.840.10008.5.1.4.1.1.481.3", 
+    "SOPInstanceUID": "1.2.826.0.1.3680043.8.498.2010020400001", 
+    "SeriesInstanceUID": "1.2.826.0.1.3680043.8.498.2010020400001.1.1", 
+    "SeriesNumber": 1, 
+    "SoftwareVersions": [
+        "0.9.3"
+    ], 
+    "SpecificCharacterSet": [
+        "ISO_IR 100"
+    ], 
+    "StationName": "station1", 
+    "StructureSetDate": "20091223", 
+    "StructureSetLabel": "sep30", 
+    "StructureSetName": "sep30", 
+    "StructureSetROISequence": [
+        {
+            "ROIDescription": "patient", 
+            "ROIGenerationAlgorithm": "MANUAL", 
+            "ROIName": "patient", 
+            "ROINumber": 1, 
+            "ROIVolume": 49200.0, 
+            "ReferencedFrameOfReferenceUID": "1.2.826.0.1.3680043.8.498.2010020400001.2"
+        }, 
+        {
+            "ROIDescription": "Isocenter Beam 1", 
+            "ROIGenerationAlgorithm": "MANUAL", 
+            "ROIName": "Isocenter 1", 
+            "ROINumber": 2, 
+            "ReferencedFrameOfReferenceUID": "1.2.826.0.1.3680043.8.498.2010020400001.2"
+        }, 
+        {
+            "ROIDescription": "Isocenter Beam 2", 
+            "ROIGenerationAlgorithm": "MANUAL", 
+            "ROIName": "Isocenter 2", 
+            "ROINumber": 3, 
+            "ReferencedFrameOfReferenceUID": "1.2.826.0.1.3680043.8.498.2010020400001.2"
+        }
+    ], 
+    "StructureSetTime": "122507", 
+    "StudyID": "sep30", 
+    "StudyInstanceUID": "1.2.826.0.1.3680043.8.498.2010020400001.1"
+}

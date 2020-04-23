@@ -42,7 +42,7 @@ def _find_or_create_subject(fw, session, project, subject_code):
                                        strain=old_subject.strain,
                                        files=old_subject.files)
 
-        # Attempt to create the subject. This may fail as a batch-run could
+        # Attempt to create the subject. This may fail as a batch-run.py could
         # result in the subject having been created already, thus we try/except
         # and look for the subject again.
         try:
@@ -108,7 +108,6 @@ def _extract_archive(zip_file_path, extract_location):
             return extract_dest
 
 
-
 def _export_dicom(dicom_file, acquisition, session, subject, project, config):
     """ For a given DICOM archive, or file(?) update the DICOM header metadata according to the
         metadata in Flywheel.
@@ -125,14 +124,16 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
 
     # For the downloaded file, extract the metadata
     local_dicom_header = dicom_header_extract(dicom_file_path)
-
+    if not local_dicom_header:
+        log.error('Could not parse DICOM header from %s - file will not be modified prior to upload!')
+        return dicom_file_path
     # This is the header from Flywheel, which may have been modified
     if 'header' in dicom_file.info:
         flywheel_dicom_header = dicom_file.info['header']['dicom']
     else:
         log.warning('WARNING: Flywheel DICOM does not have DICOM header at info.header.dicom!')
         if config['map_flywheel_to_dicom']:
-            log.warning('WARNING! map_flywheel_to_dicom is True, however there is no DICOM header information in Flywheel. Please run GRP-3 (medatadata extraction) to read DICOM header data into Flywheel.')
+            log.warning('WARNING! map_flywheel_to_dicom is True, however there is no DICOM header information in Flywheel. Please run.py GRP-3 (medatadata extraction) to read DICOM header data into Flywheel.')
         return dicom_file_path
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
@@ -378,7 +379,7 @@ def main(context):
     if context.config.get('check_gear_rules'):
         log.info('Checking for enabled gears on the export_project...')
         if any([x for x in fw.get_project_rules(export_project.id) if x.disabled != True]):
-            message = "Aborting Session Export: {} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior.".format(context.config.get('export_project'))
+            message = "Aborting Session Export: {} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior.".format(context.config.get('export_project'))
             log.error(message)
             raise BaseException('Session Export Error')
         else:
@@ -468,7 +469,7 @@ def main(context):
                 if value:
                     subject_metadata[key] = value
 
-            # Attempt to create the subject. This may fail as a batch-run could
+            # Attempt to create the subject. This may fail as a batch-run.py could
             # result in the subject having been created already, thus we try/except
             # and look for the subject again.
             try:
