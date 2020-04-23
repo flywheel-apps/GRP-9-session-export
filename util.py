@@ -22,3 +22,23 @@ def quote_numeric_string(input_str):
     else:
         output_str = input_str
     return output_str
+
+
+def ensure_filename_safety(filename):
+    """A function for removing characters that are not alphanumeric, '.', '-', or '_' from an input string.
+    Args:
+        filename (str): an input string
+    Returns:
+        str: A string without characters that are not alphanumeric, '.', '-', or '_'
+    """
+    
+    try:
+        log
+    except NameError:
+        log = logging.getLogger(__name__)
+        
+    safe_filename = re.sub(r'[^A-Za-z0-9\-\_\.]+', '', filename)
+    if filename != safe_filename:
+        log.info(f'Renaming {filename} to {safe_filename}')
+
+    return safe_filename

@@ -13,7 +13,7 @@ import logging
 import flywheel
 from pprint import pprint as pp
 from dicom_metadata import dicom_header_extract
-from util import quote_numeric_string
+from util import quote_numeric_string, ensure_filename_safety
 
 logging.basicConfig()
 log = logging.getLogger('[GRP 9]:')
@@ -613,8 +613,11 @@ def main(context):
 
         ########################################################################
         # Generate export log
-
-        export_log = os.path.join(context.output_dir, '{}-{}_export_log.csv'.format(subject.code, session.label))
+        
+        file_name = '{}-{}_export_log.csv'.format(subject.code, session.label)
+        safe_file_name = ensure_filename_safety(file_name)
+        
+        export_log = os.path.join(context.output_dir, safe_file_name)
         log.info('Generating export log: {}'.format(export_log))
         with open(export_log, 'w') as lf:
             csvwriter = csv.writer(lf, delimiter=',',
