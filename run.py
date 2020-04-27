@@ -90,10 +90,24 @@ def _extract_archive(zip_file_path, extract_location):
     which should be the zipfile name without the zip extension."""
     import zipfile
     if not zipfile.is_zipfile(zip_file_path):
+        # If this file isn't a zipfile...zip is so we can then upzip it.  Shut up, this is easiest.
         log.warning('{} is not a Zip File!'.format(zip_file_path))
-        return None
+        file_path, base = os.path.split(zip_file_path)
+        return(file_path)
+        # new_zip_path = '{}.zip'.format(zip_file_path)
+        # 
+        # log.info('creating {}'.format(new_zip_path))
+        # 
+        # with zipfile.ZipFile(new_zip_path,'w') as zip:
+        #     zip.write(zip_file_path)
+        #     zip.close()
+        #     
+        # os.remove(zip_file_path)
+        # zip_file_path = new_zip_path
 
     with zipfile.ZipFile(zip_file_path) as ZF:
+        # Comments here would be very helpful.
+        log.debug(ZF.namelist())
         if '/' in ZF.namelist()[0]:
             extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
             ZF.extractall(extract_location)
@@ -212,7 +226,9 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
     dicom_base_folder = _extract_archive(dicom_file_path, '/tmp')
 
     # Remove the zipfile
-    os.remove(dicom_file_path)
+    if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):
+        log.debug('Removing zip file {}'.format(dicom_file_path))
+        os.remove(dicom_file_path)
 
 
     # For each file in the archive, update the keys
@@ -220,6 +236,7 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
     for df in sorted(dicom_files):
         dfp = os.path.join(dicom_base_folder, df)
+        log.debug('Reading {}'.format(dfp))
         try:
             dicom = pydicom.read_file(dfp, force=False)
         except:
@@ -245,8 +262,12 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
 
 
     # Package up the archive
-    log.debug('Packaging archive: {}'.format(dicom_base_folder))
-    modified_dicom_file_path = _create_archive(dicom_base_folder, os.path.basename(dicom_base_folder))
+
+    if zipfile.is_zipfile(dicom_file_path):
+        log.debug('Packaging archive: {}'.format(dicom_base_folder))
+        modified_dicom_file_path = _create_archive(dicom_base_folder, os.path.basename(dicom_base_folder))
+    else:
+        modified_dicom_file_path = dicom_file_path
 
     return modified_dicom_file_path
 
