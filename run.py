@@ -90,20 +90,11 @@ def _extract_archive(zip_file_path, extract_location):
     which should be the zipfile name without the zip extension."""
     import zipfile
     if not zipfile.is_zipfile(zip_file_path):
-        # If this file isn't a zipfile...zip is so we can then upzip it.  Shut up, this is easiest.
+        # If this file isn't a zipfile. just return it. 
         log.warning('{} is not a Zip File!'.format(zip_file_path))
         file_path, base = os.path.split(zip_file_path)
         return(file_path)
-        # new_zip_path = '{}.zip'.format(zip_file_path)
-        # 
-        # log.info('creating {}'.format(new_zip_path))
-        # 
-        # with zipfile.ZipFile(new_zip_path,'w') as zip:
-        #     zip.write(zip_file_path)
-        #     zip.close()
-        #     
-        # os.remove(zip_file_path)
-        # zip_file_path = new_zip_path
+
 
     with zipfile.ZipFile(zip_file_path) as ZF:
         # Comments here would be very helpful.
