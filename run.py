@@ -1,19 +1,22 @@
 #!/usr/bin/env python
 
-import os
-import re
-import sys
 import csv
 import json
-import time
-import pprint
-import zipfile
-import pydicom
 import logging
-import flywheel
+import os
+import pprint
+import re
+import sys
+import time
+import zipfile
 from pprint import pprint as pp
-from dicom_metadata import dicom_header_extract
-from util import quote_numeric_string, ensure_filename_safety
+
+import flywheel
+import pydicom
+from pydicom.datadict import DicomDictionary, tag_for_keyword
+
+from dicom_metadata import compare_dicom_headers, dicom_header_extract
+from util import ensure_filename_safety, quote_numeric_string
 
 logging.basicConfig()
 log = logging.getLogger('[GRP 9]:')
@@ -52,11 +55,12 @@ def _find_or_create_subject(fw, session, project, subject_code):
             log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
             log.info('Attempting to find subject...')
             time.sleep(2)
-            subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
+            subject = fw.subjects.find_first(filter='project={},code={}'.format(
+                project.id, query_code))
             if subject:
-               log.info('... found subject {}'.format(subject.code))
+                log.info('... found subject {}'.format(subject.code))
             else:
-               raise
+                raise
 
     return subject
 
@@ -99,7 +103,8 @@ def _extract_archive(zip_file_path, extract_location):
             ZF.extractall(extract_location)
             return extract_dest
         else:
-            extract_dest = os.path.join(extract_location, os.path.basename(zip_file_path).split('.zip')[0])
+            extract_dest = os.path.join(
+                extract_location, os.path.basename(zip_file_path).split('.zip')[0])
             if not os.path.isdir(extract_dest):
                 log.debug('Creating extract directory: {}'.format(extract_dest))
                 os.mkdir(extract_dest)
@@ -133,33 +138,22 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
     else:
         log.warning('WARNING: Flywheel DICOM does not have DICOM header at info.header.dicom!')
         if config['map_flywheel_to_dicom']:
-            log.warning('WARNING! map_flywheel_to_dicom is True, however there is no DICOM header information in Flywheel. Please run.py GRP-3 (medatadata extraction) to read DICOM header data into Flywheel.')
+            log.warning(
+                'WARNING! map_flywheel_to_dicom is True, however there is no DICOM header information in '
+                'Flywheel. Please run.py GRP-3 (medatadata extraction) to read DICOM header data into Flywheel.'
+            )
         return dicom_file_path
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
-    if local_dicom_header != flywheel_dicom_header:
+    headers_match, update_keys, messages = compare_dicom_headers(
+        local_dicom_header, flywheel_dicom_header, update_keys)
 
-        log.info('Local DICOM header and Flywheel header do NOT match...')
-
-        # Generate a list of keys that need to be updated within the local dicom file
-        # Compare the headers, and track which keys are different
-        for key in sorted(flywheel_dicom_header.keys()):
-            if key not in local_dicom_header:
-                log.info('MISSING key: %s not found in local_header' % (key))
-            else:
-
-                # Make sure we're comapring the header from the same file...
-                if local_dicom_header['SOPInstanceUID'] != flywheel_dicom_header['SOPInstanceUID']:
-                    log.warning('WARNING: SOPInstanceUID does not match across the headers!!!')
-
-                # Check if the headers are equal
-                if local_dicom_header[key] != flywheel_dicom_header[key]:
-                    log.info('MISMATCH in key: {}'.format(key))
-                    log.info('DICOM    = {}'.format(local_dicom_header[key]))
-                    log.info('Flywheel = {}'.format(flywheel_dicom_header[key]))
-                    update_keys.append(key)
+    if headers_match:
+        log.info('Local DICOM header and Flywheel are considered to match!')
     else:
-        log.info('Local DICOM header and Flywheel headers match!')
+        log.info('Local DICOM header and Flywheel header do NOT match...')
+    for message in messages:
+        log.info(message)
 
     # If mapping to flywheel then we do that here
     if config['map_flywheel_to_dicom']:
@@ -168,18 +162,19 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
 
         # Map Flywheel fields to DICOM fields
         fields_map = {
-                "PatientID": subject.get('code',''),
-                "SeriesDescription": acquisition.label,
-                "PatientAge": '%sY' % str(session.get('age_years')) if session.get('age_years') else None,
-                "PatientWeight": session.get('weight',''),
-                "PatientSex": session.subject.get('sex', ''),
-                "StudyID": session.label # StudyInstanceUID if SIEMENS
-             }
+            "PatientID": subject.get('code', ''),
+            "SeriesDescription": acquisition.label,
+            "PatientAge": '%sY' % str(session.get('age_years')) if session.get('age_years') else None,
+            "PatientWeight": session.get('weight', ''),
+            "PatientSex": session.subject.get('sex', ''),
+            "StudyID": session.label  # StudyInstanceUID if SIEMENS
+        }
 
         # Check the flywheel_dicom_header for the fields in the map, if they are not there,
         # or they don't match what FW has, then add/modfiy
         for k, val in fields_map.items():
-            if k not in flywheel_dicom_header or (k in flywheel_dicom_header and flywheel_dicom_header[k] != val):
+            if k not in flywheel_dicom_header or(
+                    k in flywheel_dicom_header and flywheel_dicom_header[k] != val):
                 flywheel_dicom_header[k] = val
 
                 # Add this key to the list of keys to be updated from the FW metadata
@@ -194,7 +189,6 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
     # Iterate through the DICOM files and update the values according to the flywheel_dicom_header
     log.info('The following keys will be updated: {}'.format(update_keys))
     upload_file_path = _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header)
-
 
     return upload_file_path
 
@@ -214,7 +208,6 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
     # Remove the zipfile
     os.remove(dicom_file_path)
 
-
     # For each file in the archive, update the keys
     dicom_files = os.listdir(dicom_base_folder)
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
@@ -223,7 +216,8 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
         try:
             dicom = pydicom.read_file(dfp, force=False)
         except:
-            log.warning('{} could not be parsed! Attempting to force pydicom to read the file!'.format(df))
+            log.warning(
+                '{} could not be parsed! Attempting to force pydicom to read the file!'.format(df))
             dicom = pydicom.read_file(dfp, force=True)
         log.debug('Modifying: {}'.format(os.path.basename(dfp)))
         for key in update_keys:
@@ -235,7 +229,8 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
                     except:
                         log.warning('Could not modify DICOM attribute: {}!'.format(key))
                 else:
-                    log.warning('{} key is empty in Flywheel [{}={}]. DICOM header will remain [{}={}]'.format(key, key, flywheel_dicom_header.get(key), key, dicom.get(key)))
+                    log.warning('{} key is empty in Flywheel [{}={}]. DICOM header will remain [{}={}]'.format(
+                        key, key, flywheel_dicom_header.get(key), key, dicom.get(key)))
         log.debug('Saving {}'.format(os.path.basename(dfp)))
         try:
             dicom.save_as(dfp)
@@ -243,10 +238,10 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
             log.error('PYDICOM encountered an error when attempting to save {}!: \n{}'.format(dfp, err))
             raise
 
-
     # Package up the archive
     log.debug('Packaging archive: {}'.format(dicom_base_folder))
-    modified_dicom_file_path = _create_archive(dicom_base_folder, os.path.basename(dicom_base_folder))
+    modified_dicom_file_path = _create_archive(
+        dicom_base_folder, os.path.basename(dicom_base_folder))
 
     return modified_dicom_file_path
 
@@ -268,10 +263,10 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
 
     for f in acquisition.files:
         log.info('Exporting %s/%s/%s/%s/%s...' % (project.label,
-                                            subject.label,
-                                            session.label,
-                                            acquisition.label,
-                                            f.name))
+                                                  subject.label,
+                                                  session.label,
+                                                  acquisition.label,
+                                                  f.name))
         if f.type == 'dicom':
             upload_file_path = _export_dicom(f, acquisition, session, subject, project, config)
         else:
@@ -285,14 +280,15 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
         max_attempts = 5
         attempt = 0
         while attempt < max_attempts:
-            attempt +=1
+            attempt += 1
             s = export_acquisition.upload_file(upload_file_path)
             log.info('Upload status = {}'.format(s))
             export_acquisition = fw.get_acquisition(export_acquisition.id)
-            file_names = [ x.name for x in export_acquisition.files ]
+            file_names = [x.name for x in export_acquisition.files]
             log.debug(file_names)
             if os.path.basename(upload_file_path) not in file_names:
-                log.warning('Upload failed for {} - retrying...'.format(os.path.basename(upload_file_path)))
+                log.warning(
+                    'Upload failed for {} - retrying...'.format(os.path.basename(upload_file_path)))
             else:
                 log.info('Successfully exported: {}'.format(os.path.basename(upload_file_path)))
                 break
@@ -327,21 +323,21 @@ def _cleanup(fw, creatio):
     In the case of a failure, cleanup all containers that were created.
     """
 
-    acquisitions = [ x for x in creatio if x['container'] == "acquisition" ]
+    acquisitions = [x for x in creatio if x['container'] == "acquisition"]
     if acquisitions:
         log.info("Deleting {} acquisition containers".format(len(acquisitions)))
         for a in acquisitions:
             log.debug(a)
             fw.delete_acquisition(a['id'])
 
-    sessions = [ x for x in creatio if x['container'] == "session" ]
+    sessions = [x for x in creatio if x['container'] == "session"]
     if sessions:
         log.info("Deleting {} session containers".format(len(sessions)))
         for s in sessions:
             log.debug(s)
             fw.delete_session(s['id'])
 
-    subjects = [ x for x in creatio if x['container'] == "subject" and x['new'] == True ]
+    subjects = [x for x in creatio if x['container'] == "subject" and x['new'] == True]
     if subjects:
         log.info("Deleting {} subject containers".format(len(subjects)))
         for s in subjects:
@@ -372,14 +368,16 @@ def main(context):
             archive_project = fw.lookup(context.config.get('archive_project'))
             log.info('Archive Project: {}'.format(context.config.get('archive_project')))
         except:
-            log.error('Archive project %s could not be found!' % (context.config.get('archive_project')))
+            log.error('Archive project %s could not be found!' %
+                      (context.config.get('archive_project')))
             raise BaseException()
 
-    ## CHECK FOR PROJECT RULES
+    # CHECK FOR PROJECT RULES
     if context.config.get('check_gear_rules'):
         log.info('Checking for enabled gears on the export_project...')
         if any([x for x in fw.get_project_rules(export_project.id) if x.disabled != True]):
-            message = "Aborting Session Export: {} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior.".format(context.config.get('export_project'))
+            message = "Aborting Session Export: {} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior.".format(
+                context.config.get('export_project'))
             log.error(message)
             raise BaseException('Session Export Error')
         else:
@@ -398,30 +396,29 @@ def main(context):
 
     exported = True if ('exported' in session.get('tags', [])) else False
     if exported and context.config.get('force_export') == False:
-        log.warning('Session {}/{} has already been exported and <force_export> = False. Nothing to do!'.format(subject.code, session.label))
+        log.warning(
+            'Session {}/{} has already been exported and <force_export> = False. Nothing to do!'.format(subject.code, session.label))
         return
-
 
     # Track what is being created
     creatio = []
     creatio_instance = {
-                        "container": None,
-                        "id": None,
-                        "new": None
-                        }
+        "container": None,
+        "id": None,
+        "new": None
+    }
     try:
         ########################################################################
         # Create the export_data dict
         export_data = []
         export_instance = {
-                            "container": "",
-                            "name": "",
-                            "status": "",
-                            "origin_path": "",
-                            "export_path": "",
-                            "archive_path": ""
-                        }
-
+            "container": "",
+            "name": "",
+            "status": "",
+            "origin_path": "",
+            "export_path": "",
+            "archive_path": ""
+        }
 
         ########################################################################
         # Create the subject/session container
@@ -433,7 +430,6 @@ def main(context):
 
         subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
 
-
         ########################################################################
         # Create Subject
 
@@ -441,12 +437,15 @@ def main(context):
         sub_export['container'] = "subject"
         sub_export['name'] = subject.code
         sub_export['origin_path'] = '{}/{}/{}'.format(project.group, project.label, subject.code)
-        sub_export['export_path'] = '{}/{}/{}'.format(export_project.group, export_project.label, subject.code)
+        sub_export['export_path'] = '{}/{}/{}'.format(
+            export_project.group, export_project.label, subject.code)
         if archive_project:
-            sub_export['archive_path'] = '{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code)
+            sub_export['archive_path'] = '{}/{}/{}'.format(
+                archive_project.group, archive_project.label, subject.code)
 
         if not subj:
-            log.info('Subject %s does not exist in project %s.' % (subject.code, export_project.label))
+            log.info('Subject %s does not exist in project %s.' %
+                     (subject.code, export_project.label))
             log.info('CREATING SUBJECT CONTAINER')
             sub_export['status'] = "created"
             subject_keys = ['code',
@@ -462,7 +461,7 @@ def main(context):
                             'strain',
                             'tags',
                             'type'
-                           ]
+                            ]
             subject_metadata = {}
             for key in subject_keys:
                 value = subject.get(key)
@@ -485,15 +484,19 @@ def main(context):
                 log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
                 log.info('Attempting to find subject...')
                 time.sleep(2)
-                subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
+                subj = export_project.subjects.find_first(
+                    'code=%s' % quote_numeric_string(subject.code))
                 if subj:
-                    log.info('... found existing subject %s in project: %s. Using existing container.'
-                             % (subj.code, export_project.label))
+                    log.info(
+                        '... found existing subject %s in project: %s. Using existing container.' %
+                        (subj.code, export_project.label))
                     sub_export['status'] = "used existing"
                 else:
                     raise
         else:
-            log.info('Found existing subject %s in project: %s. Using existing container.' % (subj.code, export_project.label))
+            log.info(
+                'Found existing subject %s in project: %s. Using existing container.' %
+                (subj.code, export_project.label))
             sub_export['status'] = "used existing"
 
         export_data.append(sub_export)
@@ -501,17 +504,21 @@ def main(context):
         ########################################################################
         # Create the export_session
 
-        log.info('CREATING SESSION CONTAINER {} IN {}/{}'.format(session.label, export_project.label, subject.label))
+        log.info('CREATING SESSION CONTAINER {} IN {}/{}'.format(session.label,
+                                                                 export_project.label, subject.label))
 
         # Data logging
         session_export = export_instance.copy()
         session_export['container'] = "session"
         session_export['status'] = "created"
         session_export['name'] = session.label
-        session_export['origin_path'] = '{}/{}/{}/{}'.format(project.group, project.label, subject.code, session.label)
-        session_export['export_path'] = '{}/{}/{}/{}'.format(export_project.group, export_project.label, subject.code, session.label)
+        session_export['origin_path'] = '{}/{}/{}/{}'.format(
+            project.group, project.label, subject.code, session.label)
+        session_export['export_path'] = '{}/{}/{}/{}'.format(
+            export_project.group, export_project.label, subject.code, session.label)
         if archive_project:
-            session_export['archive_path'] = '{}/{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code, session.label)
+            session_export['archive_path'] = '{}/{}/{}/{}'.format(
+                archive_project.group, archive_project.label, subject.code, session.label)
         export_data.append(session_export)
 
         session_keys = ['age',
@@ -522,7 +529,7 @@ def main(context):
                         'timezone',
                         'weight',
                         'uid'
-                       ]
+                        ]
         session_metadata = {}
         for key in session_keys:
             value = session.get(key)
@@ -541,8 +548,6 @@ def main(context):
         for tag in session.tags:
             export_session.add_tag(tag)
 
-
-
         ########################################################################
         # For each acquisition, create the export_acquisition, upload and modify the files
 
@@ -550,7 +555,8 @@ def main(context):
         log.info('EXPORTING {} ACQUISITIONS...'.format(num_acq))
         acq_count = 0
         if len(session.acquisitions()) == 0:
-            log.warning('NO ACQUISITIONS FOUND ON THE SESSION! Resulting session will have no acquisitions.')
+            log.warning(
+                'NO ACQUISITIONS FOUND ON THE SESSION! Resulting session will have no acquisitions.')
 
         for acq in session.acquisitions():
             # Reload the acquisition to fully populate the info
@@ -560,13 +566,16 @@ def main(context):
             acquisition_export['container'] = "acquisition"
             acquisition_export['status'] = "created"
             acquisition_export['name'] = acq.label
-            acquisition_export['origin_path'] = '{}/{}/{}/{}/{}'.format(project.group, project.label, subject.code, session.label, acq.label)
-            acquisition_export['export_path'] = '{}/{}/{}/{}/{}'.format(export_project.group, export_project.label, subject.code, session.label, acq.label)
+            acquisition_export['origin_path'] = '{}/{}/{}/{}/{}'.format(
+                project.group, project.label, subject.code, session.label, acq.label)
+            acquisition_export['export_path'] = '{}/{}/{}/{}/{}'.format(
+                export_project.group, export_project.label, subject.code, session.label, acq.label)
             if archive_project:
-                acquisition_export['archive_path'] = '{}/{}/{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code, session.label, acq.label)
+                acquisition_export['archive_path'] = '{}/{}/{}/{}/{}'.format(
+                    archive_project.group, archive_project.label, subject.code, session.label, acq.label)
             export_data.append(acquisition_export)
 
-            acq_count +=1
+            acq_count += 1
             log.info('ACQUISITION {}/{}'.format(acq_count, num_acq))
             log.info('CREATING ACQUISITION CONTAINER: [label=%s]' % (acq.label))
             acquisition_keys = ['info',
@@ -574,7 +583,7 @@ def main(context):
                                 'timestamp',
                                 'timezone',
                                 'uid'
-                               ]
+                                ]
             acquisition_metadata = {}
             for key in acquisition_keys:
                 value = acq.get(key)
@@ -602,7 +611,6 @@ def main(context):
             log.info('Adding "EXPORTED" tag to {}.'.format(session.label))
             session.add_tag('EXPORTED')
 
-
         ########################################################################
         # Optionally move the session to the archive_project or tag the session as exported
 
@@ -610,21 +618,27 @@ def main(context):
             log.info('ARCHIVING SESSION TO PROJECT: {}'.format(archive_project.label))
             _archive_session(fw, session, archive_project)
 
-
         ########################################################################
         # Generate export log
-        
+
         file_name = '{}-{}_export_log.csv'.format(subject.code, session.label)
         safe_file_name = ensure_filename_safety(file_name)
-        
+
         export_log = os.path.join(context.output_dir, safe_file_name)
         log.info('Generating export log: {}'.format(export_log))
         with open(export_log, 'w') as lf:
             csvwriter = csv.writer(lf, delimiter=',',
-                                    quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csvwriter.writerow(['Container', 'Name', 'Status', 'Origin Path', 'Export Path', 'Archive Path'])
+                                   quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            csvwriter.writerow(['Container', 'Name', 'Status',
+                                'Origin Path', 'Export Path', 'Archive Path'])
             for e in export_data:
-                csvwriter.writerow([e['container'], e['name'], e['status'], e['origin_path'], e['export_path'], e['archive_path']])
+                csvwriter.writerow(
+                    [e['container'],
+                     e['name'],
+                     e['status'],
+                     e['origin_path'],
+                     e['export_path'],
+                     e['archive_path']])
     except Exception:
         # Something failed - so we cleanup the session
         log.exception('ERRORS DETECTED!')

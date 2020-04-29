@@ -3,3 +3,4 @@ config.json
 input/
 output/
 .idea/
+.DS_Store
