@@ -10,8 +10,11 @@ import pprint
 import zipfile
 import pydicom
 import logging
-import flywheel
+import tempfile
 from pprint import pprint as pp
+
+import flywheel
+
 from dicom_metadata import dicom_header_extract
 from util import quote_numeric_string, ensure_filename_safety
 
@@ -98,6 +101,7 @@ def _extract_archive(zip_file_path, extract_location):
 
     with zipfile.ZipFile(zip_file_path) as ZF:
         # Comments here would be very helpful.
+        # What I meant was I'm not sure what/why this code is 
         log.debug(ZF.namelist())
         if '/' in ZF.namelist()[0]:
             extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
@@ -113,7 +117,27 @@ def _extract_archive(zip_file_path, extract_location):
             return extract_dest
 
 
-def _export_dicom(dicom_file, acquisition, session, subject, project, config):
+def _retrieve_path_list(file_path):
+    """ For a given DICOM archive, check to see if it's a zip file.  If it is zip, extract the
+        archive, and return a list of all the files in the archive.  If it's not a zip,
+        simply return the file. returns a tuple with a list of fille paths and a boolean to indicate
+        if the file was a zip or not.
+        
+        RETURNS: tuple ( [<file_paths>], base_dir, is_zip )
+        
+    """
+    if zipfile.is_zipfile(file_path):
+        zf = zipfile.ZipFile(file_path)
+        is_zip = True
+        file_list = zf.namelist()
+    else:
+        is_zip = False
+        file_list = [file_path]
+    
+    return((file_list, is_zip))
+        
+
+def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, config):
     """ For a given DICOM archive, or file(?) update the DICOM header metadata according to the
         metadata in Flywheel.
 
@@ -124,9 +148,13 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
     update_keys = []
 
     # Download the dicom archive
-    dicom_file_path = os.path.join('/tmp', dicom_file.name)
-    dicom_file.download(dicom_file_path)
 
+
+    dicom_file_path = os.path.join(tmp_dir, dicom_file.name)
+    dicom_file.download(dicom_file_path)
+    
+    dicom_path_list = _retrieve_path_list(dicom_file_path)
+    
     # For the downloaded file, extract the metadata
     local_dicom_header = dicom_header_extract(dicom_file_path)
     if not local_dicom_header:
@@ -198,13 +226,14 @@ def _export_dicom(dicom_file, acquisition, session, subject, project, config):
 
     # Iterate through the DICOM files and update the values according to the flywheel_dicom_header
     log.info('The following keys will be updated: {}'.format(update_keys))
-    upload_file_path = _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header)
+    upload_file_path = _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, 
+                                             dicom_path_list, tmp_dir)
 
 
     return upload_file_path
 
 
-def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
+def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, dicom_file_list, tmp_dir):
     """Given a dicom archive <dicom_file_path>, iterate through a list of keys <update_keys> and
     modify each file in the archive with the value in the passed in dict <flywheel_dicom_header>
 
@@ -214,18 +243,20 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
     import pydicom
 
     # Extract the archive
-    dicom_base_folder = _extract_archive(dicom_file_path, '/tmp')
+    dicom_base_folder = _extract_archive(dicom_file_path, tmp_dir)
 
-    # Remove the zipfile
-    if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):
-        log.debug('Removing zip file {}'.format(dicom_file_path))
-        os.remove(dicom_file_path)
+    # # Remove the zipfile
+    # if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):
+    #     log.debug('Removing zip file {}'.format(dicom_file_path))
+    #     os.remove(dicom_file_path)
 
 
     # For each file in the archive, update the keys
-    dicom_files = os.listdir(dicom_base_folder)
+    # dicom_files = os.listdir(dicom_base_folder)
+    dicom_files, is_zip = dicom_file_path
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
-    for df in sorted(dicom_files):
+    # for df in sorted(dicom_files):
+    for df in dicom_files:
         dfp = os.path.join(dicom_base_folder, df)
         log.debug('Reading {}'.format(dfp))
         try:
@@ -254,7 +285,7 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header):
 
     # Package up the archive
 
-    if zipfile.is_zipfile(dicom_file_path):
+    if is_zip:
         log.debug('Packaging archive: {}'.format(dicom_base_folder))
         modified_dicom_file_path = _create_archive(dicom_base_folder, os.path.basename(dicom_base_folder))
     else:
@@ -284,54 +315,57 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
                                             session.label,
                                             acquisition.label,
                                             f.name))
-        if f.type == 'dicom':
-            upload_file_path = _export_dicom(f, acquisition, session, subject, project, config)
-        else:
-            upload_file_path = os.path.join('/tmp', f.name)
-            f.download(upload_file_path)
-
-        # Upload the file to the export_acquisition
-        log.debug("Uploading %s to %s" % (f.name, export_acquisition.label))
-
-        # Add logic around retrying failed uploads
-        max_attempts = 5
-        attempt = 0
-        while attempt < max_attempts:
-            attempt +=1
-            s = export_acquisition.upload_file(upload_file_path)
-            log.info('Upload status = {}'.format(s))
-            export_acquisition = fw.get_acquisition(export_acquisition.id)
-            file_names = [ x.name for x in export_acquisition.files ]
-            log.debug(file_names)
-            if os.path.basename(upload_file_path) not in file_names:
-                log.warning('Upload failed for {} - retrying...'.format(os.path.basename(upload_file_path)))
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            
+            if f.type == 'dicom':
+                upload_file_path = _export_dicom(f, temp_dir, acquisition, session, subject, project, config)
             else:
-                log.info('Successfully exported: {}'.format(os.path.basename(upload_file_path)))
-                break
-
-        # Delete the uploaded file locally.
-        log.debug('Removing local file: %s' % (upload_file_path))
-        os.remove(upload_file_path)
-
-        # Update file metadata
-        if f.modality:
-            log.debug('Updating modality to %s for %s' % (f.modality, f.name))
-            export_acquisition.update_file(f.name, modality=f.modality)
-        if not f.modality and f.name.endswith('mriqc.qa.html'):
-            # Special case - mriqc output files do not have modality set, so
-            # we must set the modality prior to the classification to avoid errors.
-            export_acquisition.update_file(f.name, modality='MR')
-        if f.type:
-            log.debug('Updating type to %s for %s' % (f.type, f.name))
-            export_acquisition.update_file(f.name, type=f.type)
-        if f.classification:
-            log.debug('Updating classification to %s for %s' % (f.classification, f.name))
-            export_acquisition.update_file_classification(f.name, f.classification)
-        if f.info:
-            log.debug('Updating info for %s' % (f.name))
-            export_acquisition.update_file_info(f.name, f.info)
-
-        export_acquisition.reload()
+                upload_file_path = os.path.join(temp_dir, f.name)
+                f.download(upload_file_path)
+    
+            # Upload the file to the export_acquisition
+            log.debug("Uploading %s to %s" % (f.name, export_acquisition.label))
+    
+            # Add logic around retrying failed uploads
+            max_attempts = 5
+            attempt = 0
+            while attempt < max_attempts:
+                attempt +=1
+                s = export_acquisition.upload_file(upload_file_path)
+                log.info('Upload status = {}'.format(s))
+                export_acquisition = fw.get_acquisition(export_acquisition.id)
+                file_names = [ x.name for x in export_acquisition.files ]
+                log.debug(file_names)
+                if os.path.basename(upload_file_path) not in file_names:
+                    log.warning('Upload failed for {} - retrying...'.format(os.path.basename(upload_file_path)))
+                else:
+                    log.info('Successfully exported: {}'.format(os.path.basename(upload_file_path)))
+                    break
+    
+            # Delete the uploaded file locally.
+            log.debug('Removing local file: %s' % (upload_file_path))
+            os.remove(upload_file_path)
+    
+            # Update file metadata
+            if f.modality:
+                log.debug('Updating modality to %s for %s' % (f.modality, f.name))
+                export_acquisition.update_file(f.name, modality=f.modality)
+            if not f.modality and f.name.endswith('mriqc.qa.html'):
+                # Special case - mriqc output files do not have modality set, so
+                # we must set the modality prior to the classification to avoid errors.
+                export_acquisition.update_file(f.name, modality='MR')
+            if f.type:
+                log.debug('Updating type to %s for %s' % (f.type, f.name))
+                export_acquisition.update_file(f.name, type=f.type)
+            if f.classification:
+                log.debug('Updating classification to %s for %s' % (f.classification, f.name))
+                export_acquisition.update_file_classification(f.name, f.classification)
+            if f.info:
+                log.debug('Updating info for %s' % (f.name))
+                export_acquisition.update_file_info(f.name, f.info)
+    
+            export_acquisition.reload()
 
 
 def _cleanup(fw, creatio):
