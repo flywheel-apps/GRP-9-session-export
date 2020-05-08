@@ -3,3 +3,5 @@ config.json
 input/
 output/
 .idea/
+htmlcov/
+.coverage

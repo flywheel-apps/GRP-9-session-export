@@ -11,6 +11,7 @@ import zipfile
 import pydicom
 import logging
 import tempfile
+from pathlib import Path
 from pprint import pprint as pp
 
 import flywheel
@@ -77,13 +78,13 @@ def _archive_session(fw, session, archive_project):
     session.update({'subject': {'_id': subject.id}})
 
 
-def _create_archive(content_dir, arcname, zipfilepath=None):
+def _create_archive(content_dir, arcname, file_list, zipfilepath=None):
     """Create zip archive from content_dir"""
     if not zipfilepath:
         zipfilepath = content_dir + '.zip'
     with zipfile.ZipFile(zipfilepath, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
         zf.write(content_dir, arcname)
-        for fn in os.listdir(content_dir):
+        for fn in file_list:
             zf.write(os.path.join(content_dir, fn), os.path.join(os.path.basename(arcname), fn))
     return zipfilepath
 
@@ -92,29 +93,32 @@ def _extract_archive(zip_file_path, extract_location):
     """Extract zipfile to <zip_file_path> and return the path to the directory containing the dicoms,
     which should be the zipfile name without the zip extension."""
     import zipfile
-    if not zipfile.is_zipfile(zip_file_path):
-        # If this file isn't a zipfile. just return it. 
-        log.warning('{} is not a Zip File!'.format(zip_file_path))
-        file_path, base = os.path.split(zip_file_path)
-        return(file_path)
-
-
+    # if not zipfile.is_zipfile(zip_file_path):
+    #     # If this file isn't a zipfile. just return it. 
+    #     log.warning('{} is not a Zip File!'.format(zip_file_path))
+    #     file_path, base = os.path.split(zip_file_path)
+    #     return(file_path)
+    # 
+    # 
     with zipfile.ZipFile(zip_file_path) as ZF:
-        # Comments here would be very helpful.
-        # What I meant was I'm not sure what/why this code is 
-        log.debug(ZF.namelist())
-        if '/' in ZF.namelist()[0]:
-            extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
-            ZF.extractall(extract_location)
-            return extract_dest
-        else:
-            extract_dest = os.path.join(extract_location, os.path.basename(zip_file_path).split('.zip')[0])
-            if not os.path.isdir(extract_dest):
-                log.debug('Creating extract directory: {}'.format(extract_dest))
-                os.mkdir(extract_dest)
-            log.debug('Extracting {} archive to: {}'.format(zip_file_path, extract_dest))
-            ZF.extractall(extract_dest)
-            return extract_dest
+    #     # Comments here would be very helpful.
+    #     # What I meant was I'm not sure what/why this code is 
+    #     # Doesn't this destroy internal zip directories?  Why do we need to do this?  
+    #     # What's wrong with just extractall(extract_dir)?  
+    #     log.debug(ZF.namelist())
+    #     if '/' in ZF.namelist()[0]:
+    #         extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
+    #         ZF.extractall(extract_location)
+    #         return extract_dest
+    #     else:
+        extract_dest = os.path.join(extract_location, os.path.basename(zip_file_path).split('.zip')[0])
+        #extract_dest = extract_location
+        if not os.path.isdir(extract_dest):
+            log.debug('Creating extract directory: {}'.format(extract_dest))
+            os.mkdir(extract_dest)
+        log.debug('Extracting {} archive to: {}'.format(zip_file_path, extract_dest))
+        ZF.extractall(extract_dest)
+    return extract_dest
 
 
 def _retrieve_path_list(file_path):
@@ -123,16 +127,30 @@ def _retrieve_path_list(file_path):
         simply return the file. returns a tuple with a list of fille paths and a boolean to indicate
         if the file was a zip or not.
         
-        RETURNS: tuple ( [<file_paths>], base_dir, is_zip )
+ 
+        
+        RETURNS: tuple ( [<file_paths>], is_zip )
         
     """
+    file_path = Path(file_path)
+    
     if zipfile.is_zipfile(file_path):
         zf = zipfile.ZipFile(file_path)
         is_zip = True
-        file_list = zf.namelist()
+        zip_list = zf.namelist()
+        # if '/' in zf.namelist()[0]:
+        #     zip_list = [f.split('/')[-1] for f in zip_list]
+           #extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
     else:
         is_zip = False
-        file_list = [file_path]
+        zip_list = [file_path.as_posix()]
+    
+    # Remove any directories:
+    file_list = []
+    for f in zip_list:
+        if f and f[-1] != '/':
+            file_list.append(f)
+    
     
     return((file_list, is_zip))
         
@@ -241,10 +259,12 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
 
     """
     import pydicom
-
+    dicom_files, is_zip = dicom_file_list
     # Extract the archive
-    dicom_base_folder = _extract_archive(dicom_file_path, tmp_dir)
-
+    if is_zip:
+        dicom_base_folder = _extract_archive(dicom_file_path, tmp_dir)
+    else:
+        dicom_base_folder, base = os.path.split(dicom_file_path)
     # # Remove the zipfile
     # if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):
     #     log.debug('Removing zip file {}'.format(dicom_file_path))
@@ -253,7 +273,7 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
 
     # For each file in the archive, update the keys
     # dicom_files = os.listdir(dicom_base_folder)
-    dicom_files, is_zip = dicom_file_path
+    
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
     # for df in sorted(dicom_files):
     for df in dicom_files:
@@ -287,7 +307,9 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
 
     if is_zip:
         log.debug('Packaging archive: {}'.format(dicom_base_folder))
-        modified_dicom_file_path = _create_archive(dicom_base_folder, os.path.basename(dicom_base_folder))
+        modified_dicom_file_path = _create_archive(dicom_base_folder,
+                                                   os.path.basename(dicom_base_folder),
+                                                   dicom_files)
     else:
         modified_dicom_file_path = dicom_file_path
 
@@ -343,9 +365,6 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
                     log.info('Successfully exported: {}'.format(os.path.basename(upload_file_path)))
                     break
     
-            # Delete the uploaded file locally.
-            log.debug('Removing local file: %s' % (upload_file_path))
-            os.remove(upload_file_path)
     
             # Update file metadata
             if f.modality:
