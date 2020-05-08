@@ -93,26 +93,10 @@ def _extract_archive(zip_file_path, extract_location):
     """Extract zipfile to <zip_file_path> and return the path to the directory containing the dicoms,
     which should be the zipfile name without the zip extension."""
     import zipfile
-    # if not zipfile.is_zipfile(zip_file_path):
-    #     # If this file isn't a zipfile. just return it. 
-    #     log.warning('{} is not a Zip File!'.format(zip_file_path))
-    #     file_path, base = os.path.split(zip_file_path)
-    #     return(file_path)
-    # 
-    # 
+
     with zipfile.ZipFile(zip_file_path) as ZF:
-    #     # Comments here would be very helpful.
-    #     # What I meant was I'm not sure what/why this code is 
-    #     # Doesn't this destroy internal zip directories?  Why do we need to do this?  
-    #     # What's wrong with just extractall(extract_dir)?  
-    #     log.debug(ZF.namelist())
-    #     if '/' in ZF.namelist()[0]:
-    #         extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
-    #         ZF.extractall(extract_location)
-    #         return extract_dest
-    #     else:
+
         extract_dest = os.path.join(extract_location, os.path.basename(zip_file_path).split('.zip')[0])
-        #extract_dest = extract_location
         if not os.path.isdir(extract_dest):
             log.debug('Creating extract directory: {}'.format(extract_dest))
             os.mkdir(extract_dest)
@@ -138,14 +122,12 @@ def _retrieve_path_list(file_path):
         zf = zipfile.ZipFile(file_path)
         is_zip = True
         zip_list = zf.namelist()
-        # if '/' in zf.namelist()[0]:
-        #     zip_list = [f.split('/')[-1] for f in zip_list]
-           #extract_dest = os.path.join(extract_location, ZF.namelist()[0].split('/')[0])
+
     else:
         is_zip = False
         zip_list = [file_path.as_posix()]
     
-    # Remove any directories:
+    # Remove any entries from the list that are directories:
     file_list = []
     for f in zip_list:
         if f and f[-1] != '/':
@@ -265,15 +247,13 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
         dicom_base_folder = _extract_archive(dicom_file_path, tmp_dir)
     else:
         dicom_base_folder, base = os.path.split(dicom_file_path)
-    # # Remove the zipfile
-    # if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):
-    #     log.debug('Removing zip file {}'.format(dicom_file_path))
-    #     os.remove(dicom_file_path)
+        
+    # Remove the zipfile
+    # Still explicitly removing this because we later create a zip archive of the same name
+    if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):
+        log.debug('Removing zip file {}'.format(dicom_file_path))
+        os.remove(dicom_file_path)
 
-
-    # For each file in the archive, update the keys
-    # dicom_files = os.listdir(dicom_base_folder)
-    
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
     # for df in sorted(dicom_files):
     for df in dicom_files:
