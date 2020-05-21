@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 
 import pydicom
+import pytest
 from pydicom.data import get_testdata_file
 
 from dicom_metadata import compare_dicom_headers, dicom_header_extract
@@ -10,7 +11,7 @@ from dicom_metadata import compare_dicom_headers, dicom_header_extract
 DATA_ROOT = Path(__file__).parents[1] / 'data'
 
 
-def test_known_match():
+def test_known_match(caplog):
     header_json_path = DATA_ROOT / 'test_dicom_header_rt.json'
     with open(header_json_path) as f_data:
         flywheel_dicom_header = json.load(f_data)
@@ -18,13 +19,12 @@ def test_known_match():
     test_dicom_path = get_testdata_file('rtstruct.dcm')
     local_dicom_header = dicom_header_extract(test_dicom_path)
 
-    headers_match, update_keys, messages = compare_dicom_headers(
-        local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
 
-    assert (headers_match, update_keys, messages) == (True, [], [])
+    assert (update_keys, caplog.records) == ([], [])
 
 
-def test_dicom_header_list_element_match():
+def test_dicom_header_list_element_match(caplog):
     header_json_path = DATA_ROOT / 'test_dicom_header_rt.json'
     with open(header_json_path) as f_data:
         flywheel_dicom_header = json.load(f_data)
@@ -48,13 +48,13 @@ def test_dicom_header_list_element_match():
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    headers_match, update_keys, messages = compare_dicom_headers(
-        local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    assert update_keys == exp_update_keys
+    for i in range(len(caplog.records)):
+        assert caplog.records[i].msg == exp_messages[i]
 
-    assert (headers_match, update_keys, messages) == (True, exp_update_keys, exp_messages)
 
-
-def test_dicom_header_mismatch():
+def test_dicom_header_mismatch(caplog):
     header_json_path = DATA_ROOT / 'test_dicom_header_rt.json'
     with open(header_json_path) as f_data:
         flywheel_dicom_header = json.load(f_data)
@@ -68,6 +68,7 @@ def test_dicom_header_mismatch():
     # Expected return values
     exp_update_keys = ['AccessionNumber', 'InstanceNumber']
     exp_messages = [
+        'Local DICOM header and Flywheel header do NOT match...',
         'MISMATCH in key: AccessionNumber',
         'DICOM    = 1',
         'Flywheel = 30',
@@ -84,13 +85,14 @@ def test_dicom_header_mismatch():
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    headers_match, update_keys, messages = compare_dicom_headers(
-        local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    
+    assert update_keys == exp_update_keys
+    for i in range(len(caplog.records)):
+        assert caplog.records[i].msg == exp_messages[i]
+    
 
-    assert (headers_match, update_keys, messages) == (False, exp_update_keys, exp_messages)
-
-
-def test_dicom_header_SOPInstanceUID_mismatch():
+def test_dicom_header_SOPInstanceUID_mismatch(caplog):
     header_json_path = DATA_ROOT / 'test_dicom_header_rt.json'
     with open(header_json_path) as f_data:
         flywheel_dicom_header = json.load(f_data)
@@ -111,6 +113,7 @@ def test_dicom_header_SOPInstanceUID_mismatch():
         'Any difference in RTROIObservationsSequence is not accounted for.',
         'Sequence (SQ) Tags are not compared for update. \n' +
         'Any difference in ReferencedFrameOfReferenceSequence is not accounted for.',
+        'Local DICOM header and Flywheel header do NOT match...',
         'WARNING: SOPInstanceUID does not match across the headers of individual dicom files!!!',
         'MISMATCH in key: SOPInstanceUID',
         'DICOM    = 1.2.826.0.1.3680043.8.498.2010020400001',
@@ -119,13 +122,14 @@ def test_dicom_header_SOPInstanceUID_mismatch():
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    headers_match, update_keys, messages = compare_dicom_headers(
-        local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
 
-    assert (headers_match, update_keys, messages) == (False, exp_update_keys, exp_messages)
+    assert update_keys == exp_update_keys
+    for i in range(len(caplog.records)):
+        assert caplog.records[i].msg == exp_messages[i]
 
 
-def test_dicom_header_insert_invalid_tag():
+def test_dicom_header_insert_invalid_tag(caplog):
     header_json_path = DATA_ROOT / 'test_dicom_header_rt.json'
     with open(header_json_path) as f_data:
         flywheel_dicom_header = json.load(f_data)
@@ -151,13 +155,14 @@ def test_dicom_header_insert_invalid_tag():
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    headers_match, update_keys, messages = compare_dicom_headers(
-        local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
 
-    assert (headers_match, update_keys, messages) == (True, exp_update_keys, exp_messages)
+    assert update_keys == exp_update_keys
+    for i in range(len(caplog.records)):
+        assert caplog.records[i].msg == exp_messages[i]
 
 
-def test_dicom_header_insert_valid_tag():
+def test_dicom_header_insert_valid_tag(caplog):
     header_json_path = DATA_ROOT / 'test_dicom_header_rt.json'
     with open(header_json_path) as f_data:
         flywheel_dicom_header = json.load(f_data)
@@ -172,6 +177,7 @@ def test_dicom_header_insert_valid_tag():
     exp_messages = [
         'MISSING key: BitsAllocated not found in local_header. \n' +
         'INSERTING valid tag: BitsAllocated into local dicom file. ',
+        'Local DICOM header and Flywheel header do NOT match...',
         'Sequence (SQ) Tags are not compared for update. \n' +
         'Any difference in ROIContourSequence is not accounted for.',
         'Sequence (SQ) Tags are not compared for update. \n' +
@@ -182,13 +188,8 @@ def test_dicom_header_insert_valid_tag():
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    headers_match, update_keys, messages = compare_dicom_headers(
-        local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
 
-    assert (headers_match, update_keys, messages) == (False, exp_update_keys, exp_messages)
-
-
-"""
- More Tests:
- Test Changes in a SQ tag?
-"""
+    assert update_keys == exp_update_keys
+    for i in range(len(caplog.records)):
+        assert caplog.records[i].msg == exp_messages[i]
