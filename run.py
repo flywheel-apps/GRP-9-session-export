@@ -275,6 +275,50 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
     return modified_dicom_file_path
 
 
+def _validate_classification(fw, f_modality, f_classification, f_name):
+    """Make sure classification is valid under the modality schema.
+
+    Args:
+        fw (flywheel.GearContext.client): gear context client
+        f_modality (str): file's instrument type, e.g. 'MR', 'CT', 'PT'
+        f_classification ({str: [str, ...]}): key ('Features', 'Intent', or 'Measurement')
+            values list (e.g. 'EPI', 'Calibration', 'T1')
+
+    Returns:
+        valid_for_modality (bool): True if all values are valid for modality's
+            classification schema.
+    """
+
+    valid_for_modality = True
+
+    try:
+        classification_schema = fw.get_modality(f_modality)
+
+    except flywheel.ApiException as exc:
+        valid_for_modality = False
+        log.error(exc)
+    
+    if valid_for_modality:
+
+        for key, values in f_classification.items():
+            print(key,values)
+
+            if key in classification_schema['classification']:
+                for val in values:
+                    print(val)
+                    if val not in classification_schema['classification'][key]:
+                        log.error('For %s, modality "%s", "%s" is not valid for "%s".' \
+                                   % (f_name, f_modality, val, key))
+                        valid_for_modality = False
+
+            else:
+                log.error('For %s, modality "%s", "%s" is not in classification schema.' \
+                            % (f_name, f_modality, key))
+                valid_for_modality = False
+
+    return valid_for_modality
+
+
 def _export_files(fw, acquisition, export_acquisition, session, subject, project, config):
     """Export acquisition files to the exported acquisiton.
 
@@ -337,8 +381,11 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
                 log.debug('Updating type to %s for %s' % (f.type, f.name))
                 export_acquisition.update_file(f.name, type=f.type)
             if f.classification:
-                log.debug('Updating classification to %s for %s' % (f.classification, f.name))
-                export_acquisition.update_file_classification(f.name, f.classification)
+                if _validate_classification(fw, f.modality, f.classification, f.name):
+                    log.debug('Updating classification to %s for %s' % (f.classification, f.name))
+                    export_acquisition.update_file_classification(f.name, f.classification)
+                else:
+                    log.error('Not updating classification to %s for %s' % (f.classification, f.name))
             if f.info:
                 log.debug('Updating info for %s' % (f.name))
                 export_acquisition.update_file_info(f.name, f.info)
