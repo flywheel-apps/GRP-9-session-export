@@ -237,6 +237,7 @@ def dcm_dict_is_representative(dcm_data_dict, use_rawdatastorage=False):
     return representative
 
 
+
 def dicom_header_extract(file_path):
     """
     Get a dictionary representing the dicom header at the file_path (or within the archive at file_path)
