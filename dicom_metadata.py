@@ -82,20 +82,63 @@ def get_seq_data(sequence, ignore_keys):
     return res
 
 
-def walk_dicom(dcm):
+def walk_dicom(dcm, callbacks=None, recursive=True):
+    """Same as pydicom.DataSet.walk but with logging the exception instead of raising.
+
+    Args:
+        dcm (pydicom.DataSet): A pydicom.DataSet.
+        callbacks (list): A list of function to apply on each DataElement of the
+            DataSet (default = None).
+        recursive (bool): It True, walk the dicom recursively when encountering a SQ.
+
+    Returns:
+        list: List of errors
+    """
     taglist = sorted(dcm._dict.keys())
     errors = []
     for tag in taglist:
         try:
             data_element = dcm[tag]
-            if tag in dcm and data_element.VR == "SQ":
+            if callbacks:
+                for cb in callbacks:
+                    cb(dcm, data_element)
+            if recursive and tag in dcm and data_element.VR == "SQ":
                 sequence = data_element.value
                 for dataset in sequence:
-                    walk_dicom(dataset)
+                    walk_dicom(dataset, callbacks, recursive=recursive)
         except Exception as ex:
             msg = f'With tag {tag} got exception: {str(ex)}'
             errors.append(msg)
     return errors
+
+
+def fix_VM1_callback(dataset, data_element):
+    r"""Update the data element fixing VM based on public tag definition
+
+    This addresses the following none conformance for element with string VR having
+    a `\` in the their value which gets interpret as array by pydicom.
+    This function re-join string and is aimed to be used as callback.
+
+    From the DICOM Standard, Part 5, Section 6.2, for elements with a VR of LO, such as
+    Series Description: A character string that may be padded with leading and/or
+    spaces. The character code 5CH (the BACKSLASH "\" in ISO-IR 6) shall not be
+    present, as it is used as the delimiter between values in multi-valued data
+    elements. The string shall not have Control Characters except for ESC.
+
+    Args:
+        dataset (pydicom.DataSet): A pydicom DataSet
+        data_element (pydicom.DataElement): A pydicom DataElement from the DataSet
+
+    Returns:
+        pydicom.DataElement: An updated pydicom DataElement
+    """
+    vr, vm, _, _, _ = DicomDictionary.get(data_element.tag)
+    # Check if it is a VR string
+    if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
+                  'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
+            and 'US' not in vr:
+        if vm == '1' and hasattr(data_element, 'VM') and data_element.VM > 1:
+            data_element._value = '\\'.join(data_element.value)
 
 
 def fix_type_based_on_dicom_vm(header):
@@ -119,7 +162,7 @@ def fix_type_based_on_dicom_vm(header):
 
 def get_pydicom_header(dcm):
     # Extract the header values
-    errors = walk_dicom(dcm)   # used to load all dcm tags in memory
+    errors = walk_dicom(dcm, callbacks=[fix_VM1_callback], recursive=True)
     if errors:
         result = ''
         for error in errors:

@@ -5,3 +5,4 @@ output/
 .idea/
 htmlcov/
 .coverage
+.DS_Store
