@@ -3,4 +3,6 @@ config.json
 input/
 output/
 .idea/
+htmlcov/
+.coverage
 .DS_Store
