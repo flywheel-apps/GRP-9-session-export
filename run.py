@@ -1,23 +1,24 @@
 #!/usr/bin/env python
 
-import os
-import re
-import sys
 import csv
 import json
-import time
-import pprint
-import zipfile
-import pydicom
 import logging
+import os
+import pprint
+import re
+import sys
 import tempfile
+import time
+import zipfile
+
 from pathlib import Path
 from pprint import pprint as pp
 
 import flywheel
+import pydicom
 
-from dicom_metadata import dicom_header_extract
-from util import quote_numeric_string, ensure_filename_safety
+from dicom_metadata import compare_dicom_headers, dicom_header_extract
+from util import ensure_filename_safety, quote_numeric_string
 
 logging.basicConfig()
 log = logging.getLogger('[GRP 9]:')
@@ -170,30 +171,8 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
         return dicom_file_path
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
-    if local_dicom_header != flywheel_dicom_header:
-
-        log.info('Local DICOM header and Flywheel header do NOT match...')
-
-        # Generate a list of keys that need to be updated within the local dicom file
-        # Compare the headers, and track which keys are different
-        for key in sorted(flywheel_dicom_header.keys()):
-            if key not in local_dicom_header:
-                log.info('MISSING key: %s not found in local_header' % (key))
-            else:
-
-                # Make sure we're comapring the header from the same file...
-                if local_dicom_header['SOPInstanceUID'] != flywheel_dicom_header['SOPInstanceUID']:
-                    log.warning('WARNING: SOPInstanceUID does not match across the headers!!!')
-
-                # Check if the headers are equal
-                if local_dicom_header[key] != flywheel_dicom_header[key]:
-                    log.info('MISMATCH in key: {}'.format(key))
-                    log.info('DICOM    = {}'.format(local_dicom_header[key]))
-                    log.info('Flywheel = {}'.format(flywheel_dicom_header[key]))
-                    update_keys.append(key)
-    else:
-        log.info('Local DICOM header and Flywheel headers match!')
-
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, update_keys)
+    
     # If mapping to flywheel then we do that here
     if config['map_flywheel_to_dicom']:
 

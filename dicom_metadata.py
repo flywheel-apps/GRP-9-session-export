@@ -3,16 +3,14 @@
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import string
 import tempfile
 import zipfile
-
+from pathlib import Path
 
 import pydicom
 from pydicom.datadict import DicomDictionary, tag_for_keyword
-
 
 logging.basicConfig()
 log = logging.getLogger('dicom-metadata')
@@ -110,6 +108,84 @@ def walk_dicom(dcm, callbacks=None, recursive=True):
             msg = f'With tag {tag} got exception: {str(ex)}'
             errors.append(msg)
     return errors
+
+
+def compare_dicom_headers(local_dicom_header, flywheel_dicom_header, update_keys):
+    """
+    Compares file dicom header and flywheel dicom header for differences
+
+    The local dicom header is extracted to have no Sequences
+
+    Args:
+        local_dicom_header (dict): Dictionary representation of the dicom file header
+        flywheel_dicom_header (dict): Dictionary representation of the curated Flywheel header
+        update_keys (list): List of keys to update
+
+    Returns:
+        tuple: A tuple representing if the headers match (headers_match), which keys to update (update_keys),
+            and any messages produced (messages)
+    """
+    headers_match = True
+
+    if local_dicom_header != flywheel_dicom_header:
+        # Generate a list of keys that need to be updated within the local dicom file
+        # Compare the headers, and track which keys are different
+        # Exclude Sequence Tags and list values which match non-list values
+        for key in sorted(flywheel_dicom_header.keys()):
+            try:
+                vr, vm, _, _, _ = DicomDictionary.get(tag_for_keyword(key))
+            except (ValueError, TypeError):
+                log.warning(
+                    'The proposed key, "{}", is not a valid DICOM tag. '.format(key) +
+                    'It will not be considered to update the DICOM file.'
+                )
+                continue
+
+            if key not in local_dicom_header and vr != 'SQ':
+                log.warning(
+                    'MISSING key: {} not found in local_header. \n'.format(key) +
+                    'INSERTING valid tag: {} into local dicom file. '.format(key)
+                )
+                if headers_match:
+                    log.warning('Local DICOM header and Flywheel header do NOT match...')
+                headers_match = False
+                update_keys.append(key)
+            elif key in local_dicom_header and vr == 'SQ':
+                log_message = 'Sequence (SQ) Tags are not compared for update. \n'
+                log_message += 'Any difference in {} is not accounted for.'.format(key)
+                log.warning(log_message)
+            else:
+                # Check if the tags are equal
+                if local_dicom_header[key] != flywheel_dicom_header[key]:
+                    # Check to see if flywheel_dicom_header[key] is a list
+                    # and matches a non-list local_dicom_header[key]
+                    if (
+                        not isinstance(local_dicom_header[key], list) and
+                        isinstance(flywheel_dicom_header[key], list) and
+                        local_dicom_header[key] == flywheel_dicom_header[key][0]
+                    ):
+                        log.info(
+                            'The values in both headers, %s and %s, are considered functionally equivalent.',
+                            local_dicom_header[key],
+                            flywheel_dicom_header[key])
+                    else:
+                        if headers_match:
+                            log.warning('Local DICOM header and Flywheel header do NOT match...')
+                        # Make sure we're comparing the header from the same file...
+                        if key == 'SOPInstanceUID':
+                            log.warning(
+                                'WARNING: SOPInstanceUID does not match across ' +
+                                'the headers of individual dicom files!!!'
+                            )
+                        log.warning('MISMATCH in key: {}'.format(key))
+                        log.warning('DICOM    = {}'.format(local_dicom_header[key]))
+                        log.warning('Flywheel = {}'.format(flywheel_dicom_header[key]))
+                        update_keys.append(key)
+                        headers_match = False
+    if headers_match:
+        log.info('Local DICOM header and Flywheel headers match!')
+
+    return update_keys
 
 
 def fix_VM1_callback(dataset, data_element):
@@ -291,4 +367,3 @@ def get_dcm_data_dict(dcm_path, force=False):
             log.exception('Pydicom raised exception reading dicom file %s', os.path.basename(dcm_path), exc_info=True)
             res['pydicom_exception'] = True
     return res
-
