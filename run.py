@@ -146,8 +146,6 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
 
     """
 
-    update_keys = []
-
     # Download the dicom archive
 
 
@@ -178,7 +176,7 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
         return dicom_file_path
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
-    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, update_keys)
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
     
     # If mapping to flywheel then we do that here
     if config['map_flywheel_to_dicom']:
