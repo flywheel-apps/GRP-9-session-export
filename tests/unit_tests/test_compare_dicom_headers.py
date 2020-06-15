@@ -19,7 +19,7 @@ def test_known_match(caplog):
     test_dicom_path = get_testdata_file('rtstruct.dcm')
     local_dicom_header = dicom_header_extract(test_dicom_path, dict())
 
-    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
 
     assert (update_keys, caplog.records) == ([], [])
 
@@ -48,7 +48,7 @@ def test_dicom_header_list_element_match(caplog):
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
     assert update_keys == exp_update_keys
     for i in range(len(caplog.records)):
         assert caplog.records[i].msg == exp_messages[i]
@@ -85,7 +85,7 @@ def test_dicom_header_mismatch(caplog):
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
     
     assert update_keys == exp_update_keys
     for i in range(len(caplog.records)):
@@ -122,7 +122,7 @@ def test_dicom_header_SOPInstanceUID_mismatch(caplog):
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
 
     assert update_keys == exp_update_keys
     for i in range(len(caplog.records)):
@@ -155,7 +155,7 @@ def test_dicom_header_insert_invalid_tag(caplog):
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
 
     assert update_keys == exp_update_keys
     for i in range(len(caplog.records)):
@@ -188,7 +188,7 @@ def test_dicom_header_insert_valid_tag(caplog):
         'Any difference in StructureSetROISequence is not accounted for.'
     ]
 
-    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
+    update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
 
     assert update_keys == exp_update_keys
     for i in range(len(caplog.records)):
