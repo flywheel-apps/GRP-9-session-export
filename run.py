@@ -156,14 +156,21 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
     
     dicom_path_list = _retrieve_path_list(dicom_file_path)
     
-    # For the downloaded file, extract the metadata
-    local_dicom_header = dicom_header_extract(dicom_file_path)
-    if not local_dicom_header:
-        log.error('Could not parse DICOM header from %s - file will not be modified prior to upload!')
-        return dicom_file_path
+
     # This is the header from Flywheel, which may have been modified
     if 'header' in dicom_file.info:
         flywheel_dicom_header = dicom_file.info['header']['dicom']
+        # For the downloaded file, extract the metadata
+        local_dicom_header = dicom_header_extract(
+            dicom_file_path,
+            flywheel_dicom_header
+        )
+        if not local_dicom_header:
+            log.error(
+                'Could not parse DICOM header from %s - file will not be modified prior to upload!',
+                dicom_file_path
+            )
+            return dicom_file_path
     else:
         log.warning('WARNING: Flywheel DICOM does not have DICOM header at info.header.dicom!')
         if config['map_flywheel_to_dicom']:

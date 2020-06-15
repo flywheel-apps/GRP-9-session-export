@@ -17,7 +17,7 @@ def test_known_match(caplog):
         flywheel_dicom_header = json.load(f_data)
 
     test_dicom_path = get_testdata_file('rtstruct.dcm')
-    local_dicom_header = dicom_header_extract(test_dicom_path)
+    local_dicom_header = dicom_header_extract(test_dicom_path, dict())
 
     update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header, [])
 
@@ -33,7 +33,7 @@ def test_dicom_header_list_element_match(caplog):
     flywheel_dicom_header['AccessionNumber'] = [flywheel_dicom_header['AccessionNumber']]
 
     test_dicom_path = get_testdata_file('rtstruct.dcm')
-    local_dicom_header = dicom_header_extract(test_dicom_path)
+    local_dicom_header = dicom_header_extract(test_dicom_path, dict())
 
     # Expected return values
     exp_update_keys = []
@@ -63,7 +63,7 @@ def test_dicom_header_mismatch(caplog):
     flywheel_dicom_header['AccessionNumber'] = 30
 
     test_dicom_path = get_testdata_file('rtstruct.dcm')
-    local_dicom_header = dicom_header_extract(test_dicom_path)
+    local_dicom_header = dicom_header_extract(test_dicom_path, dict())
 
     # Expected return values
     exp_update_keys = ['AccessionNumber', 'InstanceNumber']
@@ -102,7 +102,7 @@ def test_dicom_header_SOPInstanceUID_mismatch(caplog):
         '2010020400004'
     )
     test_dicom_path = get_testdata_file('rtstruct.dcm')
-    local_dicom_header = dicom_header_extract(test_dicom_path)
+    local_dicom_header = dicom_header_extract(test_dicom_path, dict())
 
     # Expected return values
     exp_update_keys = ['SOPInstanceUID']
@@ -138,7 +138,7 @@ def test_dicom_header_insert_invalid_tag(caplog):
         '2010020400001', '2010020400004')
 
     test_dicom_path = get_testdata_file('rtstruct.dcm')
-    local_dicom_header = dicom_header_extract(test_dicom_path)
+    local_dicom_header = dicom_header_extract(test_dicom_path, dict())
 
     # Expected return values
     exp_update_keys = []
@@ -171,7 +171,7 @@ def test_dicom_header_insert_valid_tag(caplog):
     flywheel_dicom_header['BitsAllocated'] = 16
 
     test_dicom_path = get_testdata_file('rtstruct.dcm')
-    local_dicom_header = dicom_header_extract(test_dicom_path)
+    local_dicom_header = dicom_header_extract(test_dicom_path, dict())
 
     exp_update_keys = ['BitsAllocated']
     exp_messages = [

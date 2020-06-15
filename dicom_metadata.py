@@ -313,11 +313,12 @@ def dcm_dict_is_representative(dcm_data_dict, use_rawdatastorage=False):
     return representative
 
 
-
-def dicom_header_extract(file_path):
+def dicom_header_extract(file_path, flywheel_header_dict):
     """
     Get a dictionary representing the dicom header at the file_path (or within the archive at file_path)
     Args:
+        flywheel_header_dict (dict): a dictionary representing the current
+            flywheel header metadata
         file_path (str): path to dicom file/archive
 
     Returns:
@@ -339,15 +340,60 @@ def dicom_header_extract(file_path):
     else:
         log.info('Not a zip. Attempting to read %s directly' % os.path.basename(file_path))
         dcm_path_list = [file_path]
-    dcm_header_dict = dict()
-    for idx, dcm_path in enumerate(dcm_path_list):
-        last = bool(idx == (len(dcm_path_list) - 1))
-        tmp_dcm_data_dict = get_dcm_data_dict(dcm_path, force=True)
-        if dcm_dict_is_representative(tmp_dcm_data_dict, use_rawdatastorage=last):
-            dcm_header_dict = tmp_dcm_data_dict.get('header')
+    dcm_path = select_matching_file(dcm_path_list, flywheel_header_dict)
+    if dcm_path is None:
+        dcm_header_dict = dict()
+        for idx, dcm_path in enumerate(dcm_path_list):
+            last = bool(idx == (len(dcm_path_list) - 1))
+            tmp_dcm_data_dict = get_dcm_data_dict(dcm_path, force=True)
+            if dcm_dict_is_representative(tmp_dcm_data_dict, use_rawdatastorage=last):
+                dcm_header_dict = tmp_dcm_data_dict.get('header')
             break
+    else:
+        dcm_header_dict = get_dcm_data_dict(dcm_path).get('header', dict())
 
     return dcm_header_dict
+
+
+def select_matching_file(file_list, flywheel_header_dict):
+    """
+    Selects the file that matches flywheel_header_dict on instance tags from
+        file_list. Returns None if none of the files match on these tags.
+    Args:
+        file_list (list): a list of paths to dicom_files
+        flywheel_header_dict (dict): dictionary representation of dicom header
+            from a flywheel file
+
+    Returns:
+        str or None
+    """
+    instance_tag_list = [
+        'SOPInstanceUID',
+        'SliceLocation',
+        'ContentTime',
+        'InstanceCreationTime',
+        'InstanceNumber'
+    ]
+    flywheel_inst_dict = dict()
+    for tag in instance_tag_list:
+        flywheel_inst_dict[tag] = flywheel_header_dict.get(tag)
+
+    if not flywheel_inst_dict:
+        log.warning(
+            'Could not match file to Flywheel header - missing match tags.'
+        )
+        return None
+    for path in file_list:
+        try:
+            dcm = pydicom.dcmread(path, specific_tags=instance_tag_list)
+            header_inst_dict = get_pydicom_header(dcm)
+            if all([header_inst_dict.get(tag) == flywheel_inst_dict.get(tag) for tag in instance_tag_list]):
+                return path
+            else:
+                continue
+        except Exception as e:
+            print(e)
+            continue
 
 
 def get_dcm_data_dict(dcm_path, force=False):
