@@ -110,7 +110,7 @@ def walk_dicom(dcm, callbacks=None, recursive=True):
     return errors
 
 
-def compare_dicom_headers(local_dicom_header, flywheel_dicom_header, update_keys):
+def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
     """
     Compares file dicom header and flywheel dicom header for differences
 
@@ -119,14 +119,13 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header, update_keys
     Args:
         local_dicom_header (dict): Dictionary representation of the dicom file header
         flywheel_dicom_header (dict): Dictionary representation of the curated Flywheel header
-        update_keys (list): List of keys to update
 
     Returns:
         tuple: A tuple representing if the headers match (headers_match), which keys to update (update_keys),
             and any messages produced (messages)
     """
     headers_match = True
-
+    update_keys = list()
     if local_dicom_header != flywheel_dicom_header:
         # Generate a list of keys that need to be updated within the local dicom file
         # Compare the headers, and track which keys are different
