@@ -17,7 +17,8 @@ from pprint import pprint as pp
 import flywheel
 import pydicom
 
-from dicom_metadata import compare_dicom_headers, dicom_header_extract
+from dicom_metadata import compare_dicom_headers, dicom_header_extract,\
+    fix_type_based_on_dicom_vm, filter_update_keys
 from util import ensure_filename_safety, quote_numeric_string
 
 logging.basicConfig()
@@ -158,6 +159,8 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
     # This is the header from Flywheel, which may have been modified
     if 'header' in dicom_file.info:
         flywheel_dicom_header = dicom_file.info['header']['dicom']
+        # Add backwards compatibility for VM arrays
+        fix_type_based_on_dicom_vm(flywheel_dicom_header)
         # For the downloaded file, extract the metadata
         local_dicom_header = dicom_header_extract(
             dicom_file_path,
@@ -202,7 +205,8 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
                 # Add this key to the list of keys to be updated from the FW metadata
                 if k not in update_keys:
                     update_keys.append(k)
-
+    # Filter out keys that vary across the archive
+    update_keys = filter_update_keys(update_keys, )
     # If the list of update_keys is empty, then there's nothing to do with the DICOM archive,
     # thus we just return the dicom_file_path and move on with life.
     if not update_keys:
@@ -231,7 +235,8 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
         dicom_base_folder = _extract_archive(dicom_file_path, tmp_dir)
     else:
         dicom_base_folder, base = os.path.split(dicom_file_path)
-        
+    file_path_list = [os.path.join(dicom_base_folder, fname) for fname in dicom_files]
+    update_keys = filter_update_keys(update_keys, file_path_list, force=True)
     # Remove the zipfile
     # Still explicitly removing this because we later create a zip archive of the same name
     if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):

@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import pandas as pd
 import pydicom
 from pydicom.datadict import DicomDictionary, tag_for_keyword
 
@@ -121,11 +122,12 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
         flywheel_dicom_header (dict): Dictionary representation of the curated Flywheel header
 
     Returns:
-        tuple: A tuple representing if the headers match (headers_match), which keys to update (update_keys),
-            and any messages produced (messages)
+        list: a list of which keys to update (update_keys)
     """
     headers_match = True
     update_keys = list()
+    # Add backwards compatibility for VM arrays
+    fix_type_based_on_dicom_vm(flywheel_dicom_header)
     if local_dicom_header != flywheel_dicom_header:
         # Generate a list of keys that need to be updated within the local dicom file
         # Compare the headers, and track which keys are different
@@ -395,7 +397,38 @@ def select_matching_file(file_list, flywheel_header_dict):
             continue
 
 
-def get_dcm_data_dict(dcm_path, force=False):
+def filter_update_keys(update_keys, dicom_path_list, force=False):
+    update_keys = [key for key in update_keys if DicomDictionary.get(key)]
+    # Remove sequence VR
+    update_keys = [key for key in update_keys if DicomDictionary.get(key).VR != 'SQ']
+    dict_list = list()
+    for dcm_path in dicom_path_list:
+        dcm = pydicom.dcmread(dcm_path, specific_tags=update_keys, force=force)
+        data_dict_tmp = get_pydicom_header(dcm)
+        if data_dict_tmp:
+            dict_list.append(data_dict_tmp)
+    exc_keys = list()
+    if dict_list:
+        df = pd.DataFrame(dict_list)
+        df = df.applymap(make_list_hashable)
+        for key, value in df.nunique().items():
+            if value > 1:
+                log.error(
+                    '%s has more than one unique value and will not be edited.',
+                    key
+                )
+                exc_keys.append(key)
+    update_keys = [key for key in update_keys if key not in exc_keys]
+    return update_keys
+
+
+def make_list_hashable(value):
+    if isinstance(value, list):
+        value = tuple(make_list_hashable(x) for x in value)
+    return value
+
+
+def get_dcm_data_dict(dcm_path, force=False, specific_tags=None):
     file_size = os.path.getsize(dcm_path)
     res = {
         'path': dcm_path,
@@ -406,7 +439,7 @@ def get_dcm_data_dict(dcm_path, force=False):
     }
     if file_size > 0:
         try:
-            dcm = pydicom.dcmread(dcm_path, force=force)
+            dcm = pydicom.dcmread(dcm_path, force=force, specific_tags=specific_tags)
             res['header'] = get_pydicom_header(dcm)
         except Exception:
             log.exception('Pydicom raised exception reading dicom file %s', os.path.basename(dcm_path), exc_info=True)
