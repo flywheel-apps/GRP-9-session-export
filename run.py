@@ -205,8 +205,6 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
                 # Add this key to the list of keys to be updated from the FW metadata
                 if k not in update_keys:
                     update_keys.append(k)
-    # Filter out keys that vary across the archive
-    update_keys = filter_update_keys(update_keys, )
     # If the list of update_keys is empty, then there's nothing to do with the DICOM archive,
     # thus we just return the dicom_file_path and move on with life.
     if not update_keys:

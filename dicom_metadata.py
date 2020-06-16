@@ -397,32 +397,73 @@ def select_matching_file(file_list, flywheel_header_dict):
             continue
 
 
-def filter_update_keys(update_keys, dicom_path_list, force=False):
-    update_keys = [key for key in update_keys if DicomDictionary.get(key)]
-    # Remove sequence VR
-    update_keys = [key for key in update_keys if DicomDictionary.get(key).VR != 'SQ']
+def get_dicom_df(dicom_path_list, specific_tag_list=None, force=False):
+    """
+    Assembles a DataFrame of DICOM tag values for dicom_path_list
+    Args:
+        dicom_path_list (list): list of paths to dicom files
+        specific_tag_list (list): list of tags to be provided as
+            pydicom.dcmread's specific_tags parameter
+        force (bool): whether to set force to True for pydicom.dcmread
+
+    Returns:
+        pandas.DataFrame: a dataframe representing the DICOM tag values for
+            dicom_path_list
+    """
     dict_list = list()
     for dcm_path in dicom_path_list:
-        dcm = pydicom.dcmread(dcm_path, specific_tags=update_keys, force=force)
+        dcm = pydicom.dcmread(dcm_path, specific_tags=specific_tag_list, force=force)
         data_dict_tmp = get_pydicom_header(dcm)
         if data_dict_tmp:
             dict_list.append(data_dict_tmp)
-    exc_keys = list()
     if dict_list:
         df = pd.DataFrame(dict_list)
-        df = df.applymap(make_list_hashable)
-        for key, value in df.nunique().items():
-            if value > 1:
-                log.error(
-                    '%s has more than one unique value and will not be edited.',
-                    key
-                )
-                exc_keys.append(key)
+        return df
+    else:
+        return None
+
+
+def filter_update_keys(update_keys, dicom_path_list, force=False):
+    """
+    Removes tags that are not in the DicomDictionary, tags that have a SQ VR,
+        tags that vary across a dicom archive
+    Args:
+        update_keys (list): list of DICOM tags to filter
+        dicom_path_list (list): list of paths to dicom files
+        force (bool): whether to set force to True for pydicom.dcmread
+
+    Returns:
+        list: a list of the DICOM tags that can be safely set from update_keys
+
+    """
+    # Remove keys not in the DICOM dictionary
+    update_keys = [key for key in update_keys if DicomDictionary.get(tag_for_keyword(key))]
+    # Remove SQ VR
+    update_keys = [key for key in update_keys if DicomDictionary.get(tag_for_keyword(key))[0] != 'SQ']
+    df = get_dicom_df(dicom_path_list, specific_tag_list=update_keys, force=force)
+    df = df.applymap(make_list_hashable)
+    exc_keys = list()
+    for key, value in df.nunique().items():
+        if value > 1:
+            log.error(
+                '%s has more than one unique value and will not be edited.',
+                key
+            )
+            exc_keys.append(key)
     update_keys = [key for key in update_keys if key not in exc_keys]
     return update_keys
 
 
 def make_list_hashable(value):
+    """
+    Transforms lists/lists of lists to tuples/lists of tuples for hashability.
+    If value is not a list, it is returned unchanged.
+    Args:
+        value: an item from an iterable that may or may not be a list
+
+    Returns:
+        a tuple if value was a list, otherwise the input value
+    """
     if isinstance(value, list):
         value = tuple(make_list_hashable(x) for x in value)
     return value
