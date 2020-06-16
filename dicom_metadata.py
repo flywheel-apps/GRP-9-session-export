@@ -456,7 +456,7 @@ def filter_update_keys(update_keys, dicom_path_list, force=False):
 
 def make_list_hashable(value):
     """
-    Transforms lists/lists of lists to tuples/lists of tuples for hashability.
+    Transforms lists/lists of lists to tuples/tuples of tuples for hashability.
     If value is not a list, it is returned unchanged.
     Args:
         value: an item from an iterable that may or may not be a list
