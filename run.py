@@ -180,12 +180,12 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
 
         # Map Flywheel fields to DICOM fields
         fields_map = {
-                "PatientID": subject.get('code',''),
+                "PatientID": subject.get('code', ''),
                 "SeriesDescription": acquisition.label,
                 "PatientAge": '%sY' % str(session.get('age_years')) if session.get('age_years') else None,
-                "PatientWeight": session.get('weight',''),
-                "PatientSex": session.subject.get('sex', ''),
-                "StudyID": session.label # StudyInstanceUID if SIEMENS
+                "PatientWeight": session.get('weight', ''),
+                "PatientSex": get_patientsex_from_subject(session.subject),
+                "StudyID": session.label  # StudyInstanceUID if SIEMENS
              }
 
         # Check the flywheel_dicom_header for the fields in the map, if they are not there,
@@ -705,6 +705,22 @@ def main(context):
         os._exit(1)
 
 
+def get_patientsex_from_subject(subject):
+    """
+    transforms flywheel subject.sex into a string valid for the PatientSex
+        DICOM header tag
+    Args:
+        subject (flywheel.Subject): a flywheel subject container object
+
+    Returns:
+        str: empty string (''), 'M', 'F', or 'O'
+
+    """
+    if subject.sex in ['male', 'female', 'other']:
+        patientsex = subject.sex[0].upper()
+        return patientsex
+    else:
+        return ''
 ###############################################################################
 
 if __name__ == '__main__':
