@@ -209,13 +209,18 @@ def fix_VM1_callback(dataset, data_element):
     Returns:
         pydicom.DataElement: An updated pydicom DataElement
     """
-    vr, vm, _, _, _ = DicomDictionary.get(data_element.tag)
-    # Check if it is a VR string
-    if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
-                  'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
-            and 'US' not in vr:
-        if vm == '1' and hasattr(data_element, 'VM') and data_element.VM > 1:
-            data_element._value = '\\'.join(data_element.value)
+    try:
+        vr, vm, _, _, _ = DicomDictionary.get(data_element.tag)
+        # Check if it is a VR string
+        if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
+                      'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
+                and 'US' not in vr:
+            if vm == '1' and hasattr(data_element, 'VM') and data_element.VM > 1:
+                data_element._value = '\\'.join(data_element.value)
+    except KeyError:
+        # we are only fixing VM for tag supported by get_entry (i.e. DicomDictionary or
+        # RepeatersDictionary)
+        pass
 
 
 def fix_type_based_on_dicom_vm(header):
