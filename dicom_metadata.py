@@ -456,10 +456,11 @@ def filter_update_keys(update_keys, dicom_path_list, force=False):
     exc_keys = list()
     for key, value in df.nunique().items():
         if value > 1:
-            log.warning(
-                '%s has more than one unique value and will not be edited.',
-                key
+            log_str = (
+                'DICOM tag %s has more than one unique value across the'
+                'DICOM archive. This tag will not be edited in DICOM headers.'
             )
+            log.warning(log_str, key)
             exc_keys.append(key)
     filtered_keys = [key for key in filtered_keys if key not in exc_keys]
     return filtered_keys
