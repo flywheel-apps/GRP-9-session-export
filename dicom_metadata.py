@@ -402,6 +402,7 @@ def select_matching_file(file_list, flywheel_header_dict):
                 'An exception was raised when parsing %s', path, exc_info=True
             )
             continue
+    return None
 
 
 def get_dicom_df(dicom_path_list, specific_tag_list=None, force=False):
@@ -444,21 +445,24 @@ def filter_update_keys(update_keys, dicom_path_list, force=False):
 
     """
     # Remove keys not in the DICOM dictionary
-    update_keys = [key for key in update_keys if DicomDictionary.get(tag_for_keyword(key))]
-    # Remove SQ VR
-    update_keys = [key for key in update_keys if DicomDictionary.get(tag_for_keyword(key))[0] != 'SQ']
+    filtered_keys = list()
+    for key in update_keys:
+        if DicomDictionary.get(tag_for_keyword(key)):
+            if DicomDictionary.get(tag_for_keyword(key))[0] != 'SQ':
+                filtered_keys.append(key)
+
     df = get_dicom_df(dicom_path_list, specific_tag_list=update_keys, force=force)
     df = df.applymap(make_list_hashable)
     exc_keys = list()
     for key, value in df.nunique().items():
         if value > 1:
-            log.error(
+            log.warning(
                 '%s has more than one unique value and will not be edited.',
                 key
             )
             exc_keys.append(key)
-    update_keys = [key for key in update_keys if key not in exc_keys]
-    return update_keys
+    filtered_keys = [key for key in filtered_keys if key not in exc_keys]
+    return filtered_keys
 
 
 def make_list_hashable(value):
