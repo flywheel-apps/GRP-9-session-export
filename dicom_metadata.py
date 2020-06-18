@@ -398,7 +398,9 @@ def select_matching_file(file_list, flywheel_header_dict):
             else:
                 continue
         except Exception as e:
-            print(e)
+            log.error(
+                'An exception was raised when parsing %s', path, exc_info=True
+            )
             continue
 
 
