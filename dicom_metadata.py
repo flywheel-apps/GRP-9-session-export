@@ -351,7 +351,7 @@ def dicom_header_extract(file_path, flywheel_header_dict):
                 dcm_header_dict = tmp_dcm_data_dict.get('header')
             break
     else:
-        dcm_header_dict = get_dcm_data_dict(dcm_path).get('header', dict())
+        dcm_header_dict = get_dcm_data_dict(dcm_path, force=True).get('header', dict())
 
     return dcm_header_dict
 
@@ -372,23 +372,28 @@ def select_matching_file(file_list, flywheel_header_dict):
         'SOPInstanceUID',
         'SliceLocation',
         'ContentTime',
+        'AcquisitionTime',
         'InstanceCreationTime',
         'InstanceNumber'
     ]
-    flywheel_inst_dict = dict()
-    for tag in instance_tag_list:
-        flywheel_inst_dict[tag] = flywheel_header_dict.get(tag)
+    if len(file_list) == 1:
+        path = file_list[0]
+        log.info(
+            'Only one DICOM file, using %s to compare to flywheel header',
+            path
+        )
+        return path
 
-    if not flywheel_inst_dict:
+    if all([bool(flywheel_header_dict.get(tag) is None) for tag in instance_tag_list]):
         log.warning(
             'Could not match file to Flywheel header - missing match tags.'
         )
         return None
     for path in file_list:
         try:
-            dcm = pydicom.dcmread(path, specific_tags=instance_tag_list)
+            dcm = pydicom.dcmread(path, specific_tags=instance_tag_list, force=True)
             header_inst_dict = get_pydicom_header(dcm)
-            if all([header_inst_dict.get(tag) == flywheel_inst_dict.get(tag) for tag in instance_tag_list]):
+            if all([header_inst_dict.get(tag) == flywheel_header_dict.get(tag) for tag in instance_tag_list]):
                 return path
             else:
                 continue
@@ -476,7 +481,7 @@ def get_dcm_data_dict(dcm_path, force=False, specific_tags=None):
         'size': file_size,
         'force': force,
         'pydicom_exception': False,
-        'header': None
+        'header': dict()
     }
     if file_size > 0:
         try:

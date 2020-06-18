@@ -61,3 +61,9 @@ def test_select_matching_file_extract():
         assert return_path == os.path.join(temp_dir, 'MR_small_7.dcm')
     return_header = dicom_header_extract(dicom_zip_path, exp_header)
     assert exp_header == return_header
+
+
+def test_select_matching_file_empty_dict():
+    test_dicom_path = get_testdata_files('rtstruct.dcm')[0]
+    assert select_matching_file([], dict()) is None
+    assert select_matching_file([test_dicom_path], dict()) == test_dicom_path
