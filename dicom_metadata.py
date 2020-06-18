@@ -224,6 +224,7 @@ def fix_VM1_callback(dataset, data_element):
 
 
 def fix_type_based_on_dicom_vm(header):
+
     exc_keys = []
     for key, val in header.items():
         try:
@@ -235,6 +236,15 @@ def fix_type_based_on_dicom_vm(header):
         if vr != 'SQ':
             if vm != '1' and not isinstance(val, list):  # anything else is a list
                 header[key] = [val]
+            elif vm == '1' and isinstance(val, list):
+                if len(val) == 1:
+                    header[key] = val[0]
+                else:
+                    if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
+                                  'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
+                            and 'US' not in vr:
+
+                        header[key] = '/'.join([str(item) for item in val])
         else:
             for dataset in val:
                 fix_type_based_on_dicom_vm(dataset)
@@ -338,7 +348,7 @@ def dicom_header_extract(file_path, flywheel_header_dict):
             zip = zipfile.ZipFile(file_path)
             tmp_dir = tempfile.TemporaryDirectory().name
             zip.extractall(path=tmp_dir)
-            dcm_path_list = Path(tmp_dir).rglob('*')
+            dcm_path_list = sorted(Path(tmp_dir).rglob('*'))
             # keep only files
             dcm_path_list = [str(path) for path in dcm_path_list if path.is_file()]
         except:

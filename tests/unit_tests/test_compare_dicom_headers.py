@@ -203,10 +203,13 @@ def test_dicom_header_compare_VM_backward_compatibility():
     # old headers represented VM 1-n as single values rather than lists of len 1
     flywheel_dicom_header['WindowWidth'] = 1600
     flywheel_dicom_header['WindowCenter'] = 600
+    flywheel_dicom_header['StudyID'] = ['4M', 'R1']
     test_dicom_path = get_testdata_files('MR_small.dcm')[0]
     local_dicom_header = dicom_header_extract(test_dicom_path, dict())
+    local_dicom_header['StudyID'] = '4M/R1'
     assert local_dicom_header.get('WindowWidth') == [1600]
     assert local_dicom_header.get('WindowCenter') == [600]
     update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
     assert 'WindowWidth' not in update_keys
     assert 'WindowCenter' not in update_keys
+    assert 'StudyID' not in update_keys
