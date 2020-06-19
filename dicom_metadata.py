@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import pandas as pd
 import pydicom
 from pydicom.datadict import DicomDictionary, tag_for_keyword
 
@@ -110,7 +111,7 @@ def walk_dicom(dcm, callbacks=None, recursive=True):
     return errors
 
 
-def compare_dicom_headers(local_dicom_header, flywheel_dicom_header, update_keys):
+def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
     """
     Compares file dicom header and flywheel dicom header for differences
 
@@ -119,14 +120,14 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header, update_keys
     Args:
         local_dicom_header (dict): Dictionary representation of the dicom file header
         flywheel_dicom_header (dict): Dictionary representation of the curated Flywheel header
-        update_keys (list): List of keys to update
 
     Returns:
-        tuple: A tuple representing if the headers match (headers_match), which keys to update (update_keys),
-            and any messages produced (messages)
+        list: a list of which keys to update (update_keys)
     """
     headers_match = True
-
+    update_keys = list()
+    # Add backwards compatibility for VM arrays
+    fix_type_based_on_dicom_vm(flywheel_dicom_header)
     if local_dicom_header != flywheel_dicom_header:
         # Generate a list of keys that need to be updated within the local dicom file
         # Compare the headers, and track which keys are different
@@ -208,16 +209,22 @@ def fix_VM1_callback(dataset, data_element):
     Returns:
         pydicom.DataElement: An updated pydicom DataElement
     """
-    vr, vm, _, _, _ = DicomDictionary.get(data_element.tag)
-    # Check if it is a VR string
-    if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
-                  'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
-            and 'US' not in vr:
-        if vm == '1' and hasattr(data_element, 'VM') and data_element.VM > 1:
-            data_element._value = '\\'.join(data_element.value)
+    try:
+        vr, vm, _, _, _ = DicomDictionary.get(data_element.tag)
+        # Check if it is a VR string
+        if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
+                      'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
+                and 'US' not in vr:
+            if vm == '1' and hasattr(data_element, 'VM') and data_element.VM > 1:
+                data_element._value = '\\'.join(data_element.value)
+    except KeyError:
+        # we are only fixing VM for tag supported by get_entry (i.e. DicomDictionary or
+        # RepeatersDictionary)
+        pass
 
 
 def fix_type_based_on_dicom_vm(header):
+
     exc_keys = []
     for key, val in header.items():
         try:
@@ -229,6 +236,15 @@ def fix_type_based_on_dicom_vm(header):
         if vr != 'SQ':
             if vm != '1' and not isinstance(val, list):  # anything else is a list
                 header[key] = [val]
+            elif vm == '1' and isinstance(val, list):
+                if len(val) == 1:
+                    header[key] = val[0]
+                else:
+                    if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
+                                  'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
+                            and 'US' not in vr:
+
+                        header[key] = '\\'.join([str(item) for item in val])
         else:
             for dataset in val:
                 fix_type_based_on_dicom_vm(dataset)
@@ -313,11 +329,12 @@ def dcm_dict_is_representative(dcm_data_dict, use_rawdatastorage=False):
     return representative
 
 
-
-def dicom_header_extract(file_path):
+def dicom_header_extract(file_path, flywheel_header_dict):
     """
     Get a dictionary representing the dicom header at the file_path (or within the archive at file_path)
     Args:
+        flywheel_header_dict (dict): a dictionary representing the current
+            flywheel header metadata
         file_path (str): path to dicom file/archive
 
     Returns:
@@ -331,7 +348,7 @@ def dicom_header_extract(file_path):
             zip = zipfile.ZipFile(file_path)
             tmp_dir = tempfile.TemporaryDirectory().name
             zip.extractall(path=tmp_dir)
-            dcm_path_list = Path(tmp_dir).rglob('*')
+            dcm_path_list = sorted(Path(tmp_dir).rglob('*'))
             # keep only files
             dcm_path_list = [str(path) for path in dcm_path_list if path.is_file()]
         except:
@@ -339,29 +356,158 @@ def dicom_header_extract(file_path):
     else:
         log.info('Not a zip. Attempting to read %s directly' % os.path.basename(file_path))
         dcm_path_list = [file_path]
-    dcm_header_dict = dict()
-    for idx, dcm_path in enumerate(dcm_path_list):
-        last = bool(idx == (len(dcm_path_list) - 1))
-        tmp_dcm_data_dict = get_dcm_data_dict(dcm_path, force=True)
-        if dcm_dict_is_representative(tmp_dcm_data_dict, use_rawdatastorage=last):
-            dcm_header_dict = tmp_dcm_data_dict.get('header')
+    dcm_path = select_matching_file(dcm_path_list, flywheel_header_dict)
+    if dcm_path is None:
+        dcm_header_dict = dict()
+        for idx, dcm_path in enumerate(dcm_path_list):
+            last = bool(idx == (len(dcm_path_list) - 1))
+            tmp_dcm_data_dict = get_dcm_data_dict(dcm_path, force=True)
+            if dcm_dict_is_representative(tmp_dcm_data_dict, use_rawdatastorage=last):
+                dcm_header_dict = tmp_dcm_data_dict.get('header')
             break
+    else:
+        dcm_header_dict = get_dcm_data_dict(dcm_path, force=True).get('header', dict())
 
     return dcm_header_dict
 
 
-def get_dcm_data_dict(dcm_path, force=False):
+def select_matching_file(file_list, flywheel_header_dict):
+    """
+    Selects the file that matches flywheel_header_dict on instance tags from
+        file_list. Returns None if none of the files match on these tags.
+    Args:
+        file_list (list): a list of paths to dicom_files
+        flywheel_header_dict (dict): dictionary representation of dicom header
+            from a flywheel file
+
+    Returns:
+        str or None
+    """
+    instance_tag_list = [
+        'SOPInstanceUID',
+        'SliceLocation',
+        'ContentTime',
+        'AcquisitionTime',
+        'InstanceCreationTime',
+        'InstanceNumber'
+    ]
+    if len(file_list) == 1:
+        path = file_list[0]
+        log.info(
+            'Only one DICOM file, using %s to compare to flywheel header',
+            path
+        )
+        return path
+
+    if all([bool(flywheel_header_dict.get(tag) is None) for tag in instance_tag_list]):
+        log.warning(
+            'Could not match file to Flywheel header - missing match tags.'
+        )
+        return None
+    for path in file_list:
+        try:
+            dcm = pydicom.dcmread(path, specific_tags=instance_tag_list, force=True)
+            header_inst_dict = get_pydicom_header(dcm)
+            if all([header_inst_dict.get(tag) == flywheel_header_dict.get(tag) for tag in instance_tag_list]):
+                return path
+            else:
+                continue
+        except Exception as e:
+            log.error(
+                'An exception was raised when parsing %s', path, exc_info=True
+            )
+            continue
+    return None
+
+
+def get_dicom_df(dicom_path_list, specific_tag_list=None, force=False):
+    """
+    Assembles a DataFrame of DICOM tag values for dicom_path_list
+    Args:
+        dicom_path_list (list): list of paths to dicom files
+        specific_tag_list (list): list of tags to be provided as
+            pydicom.dcmread's specific_tags parameter
+        force (bool): whether to set force to True for pydicom.dcmread
+
+    Returns:
+        pandas.DataFrame: a dataframe representing the DICOM tag values for
+            dicom_path_list
+    """
+    dict_list = list()
+    for dcm_path in dicom_path_list:
+        dcm = pydicom.dcmread(dcm_path, specific_tags=specific_tag_list, force=force)
+        data_dict_tmp = get_pydicom_header(dcm)
+        if data_dict_tmp:
+            dict_list.append(data_dict_tmp)
+    if dict_list:
+        df = pd.DataFrame(dict_list)
+        return df
+    else:
+        return None
+
+
+def filter_update_keys(update_keys, dicom_path_list, force=False):
+    """
+    Removes tags that are not in the DicomDictionary, tags that have a SQ VR,
+        tags that vary across a dicom archive
+    Args:
+        update_keys (list): list of DICOM tags to filter
+        dicom_path_list (list): list of paths to dicom files
+        force (bool): whether to set force to True for pydicom.dcmread
+
+    Returns:
+        list: a list of the DICOM tags that can be safely set from update_keys
+
+    """
+    # Remove keys not in the DICOM dictionary
+    filtered_keys = list()
+    for key in update_keys:
+        if DicomDictionary.get(tag_for_keyword(key)):
+            if DicomDictionary.get(tag_for_keyword(key))[0] != 'SQ':
+                filtered_keys.append(key)
+
+    df = get_dicom_df(dicom_path_list, specific_tag_list=update_keys, force=force)
+    df = df.applymap(make_list_hashable)
+    exc_keys = list()
+    for key, value in df.nunique().items():
+        if value > 1:
+            log_str = (
+                'DICOM tag %s has more than one unique value across the'
+                'DICOM archive. This tag will not be edited in DICOM headers.'
+            )
+            log.warning(log_str, key)
+            exc_keys.append(key)
+    filtered_keys = [key for key in filtered_keys if key not in exc_keys]
+    return filtered_keys
+
+
+def make_list_hashable(value):
+    """
+    Transforms lists/lists of lists to tuples/tuples of tuples for hashability.
+    If value is not a list, it is returned unchanged.
+    Args:
+        value: an item from an iterable that may or may not be a list
+
+    Returns:
+        a tuple if value was a list, otherwise the input value
+    """
+    if isinstance(value, list):
+        value = tuple(make_list_hashable(x) for x in value)
+    return value
+
+
+def get_dcm_data_dict(dcm_path, force=False, specific_tags=None):
     file_size = os.path.getsize(dcm_path)
     res = {
         'path': dcm_path,
         'size': file_size,
         'force': force,
         'pydicom_exception': False,
-        'header': None
+        'header': dict()
     }
     if file_size > 0:
         try:
-            dcm = pydicom.dcmread(dcm_path, force=force)
+            dcm = pydicom.dcmread(dcm_path, force=force, specific_tags=specific_tags)
             res['header'] = get_pydicom_header(dcm)
         except Exception:
             log.exception('Pydicom raised exception reading dicom file %s', os.path.basename(dcm_path), exc_info=True)
