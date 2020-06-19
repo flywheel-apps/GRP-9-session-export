@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import pydicom
-from pydicom.datadict import DicomDictionary, tag_for_keyword
+from pydicom.datadict import DicomDictionary, tag_for_keyword, get_entry
 
 logging.basicConfig()
 log = logging.getLogger('dicom-metadata')
@@ -210,7 +210,7 @@ def fix_VM1_callback(dataset, data_element):
         pydicom.DataElement: An updated pydicom DataElement
     """
     try:
-        vr, vm, _, _, _ = DicomDictionary.get(data_element.tag)
+        vr, vm, _, _, _ = get_entry(data_element.tag)
         # Check if it is a VR string
         if vr not in ['UT', 'ST', 'LT', 'FL', 'FD', 'AT', 'OB', 'OW', 'OF', 'SL', 'SQ',
                       'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
