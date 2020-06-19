@@ -283,7 +283,7 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
     return modified_dicom_file_path
 
 
-def _validate_classification(fw, f_modality, f_classification, f_name):
+def validate_classification(fw, f_modality, f_classification, f_name):
     """Make sure classification is valid under the modality schema.
 
     Args:
@@ -298,23 +298,31 @@ def _validate_classification(fw, f_modality, f_classification, f_name):
     """
 
     valid_for_modality = True
-
+    classification_schema = dict()
     try:
         classification_schema = fw.get_modality(f_modality)
 
     except flywheel.ApiException as exc:
+
         valid_for_modality = False
         log.error(exc)
-    
+    classification_dict = classification_schema.get('classification')
+    # Handle Custom appropriately
+    if 'Custom' in f_classification:
+        custom = f_classification.pop('Custom')
+        if not isinstance(custom, list):
+            valid_for_modality = False
+        elif f_classification and not classification_dict:
+            valid_for_modality = False
+
     if valid_for_modality:
 
         for key, values in f_classification.items():
-            print(key,values)
 
-            if key in classification_schema['classification']:
+            if key in classification_dict:
                 for val in values:
-                    print(val)
-                    if val not in classification_schema['classification'][key]:
+
+                    if val not in classification_dict[key]:
                         log.error('For %s, modality "%s", "%s" is not valid for "%s".' \
                                    % (f_name, f_modality, val, key))
                         valid_for_modality = False
@@ -389,7 +397,7 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
                 log.debug('Updating type to %s for %s' % (f.type, f.name))
                 export_acquisition.update_file(f.name, type=f.type)
             if f.classification:
-                if _validate_classification(fw, f.modality, f.classification, f.name):
+                if validate_classification(fw, f.modality, f.classification, f.name):
                     log.debug('Updating classification to %s for %s' % (f.classification, f.name))
                     export_acquisition.update_file_classification(f.name, f.classification)
                 else:
