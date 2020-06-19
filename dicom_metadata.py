@@ -244,7 +244,7 @@ def fix_type_based_on_dicom_vm(header):
                                   'SS', 'UL', 'OB/OW', 'OW/OB', 'OB or OW', 'OW or OB', 'UN'] \
                             and 'US' not in vr:
 
-                        header[key] = '/'.join([str(item) for item in val])
+                        header[key] = '\\'.join([str(item) for item in val])
         else:
             for dataset in val:
                 fix_type_based_on_dicom_vm(dataset)
