@@ -108,7 +108,10 @@ mr_modality = {'classification': {'Features': ['Quantitative',
 
 class Client:
     def get_modality(self, string):
-        return mr_modality
+        if string == 'MR':
+            return mr_modality
+        else:
+            return {'id': string, 'classification': None}
 
 class GearContext:
     def __init__(self):
@@ -124,11 +127,11 @@ def test_validate_classification_basic_function_works(caplog):
     fw = GearContext().client
 
     classification = {'Measurement': ['B0']}
-    return_value = run._validate_classification(fw, 'MR', classification, 'filename')
+    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
     assert return_value == True
 
     classification = {'Measurement': ['FLAIR']}
-    return_value = run._validate_classification(fw, 'MR', classification, 'filename')
+    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
     assert return_value == False
     assert 'filename, modality "MR", "FLAIR" is not valid for "Measurement"' in caplog.messages[0]
 
@@ -138,11 +141,11 @@ def test_validate_classification_multiple_works():
     fw = GearContext().client
 
     classification = {'Features': ['MPRAGE', '3D']}
-    return_value = run._validate_classification(fw, 'MR', classification, 'filename')
+    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
     assert return_value == True
 
     classification = {'Features': ['Derived', 'fail']}
-    return_value = run._validate_classification(fw, 'MR', classification, 'filename')
+    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
     assert return_value == False
 
 
@@ -153,7 +156,7 @@ def test_validate_classification_bad_class_key_fail(caplog):
     fw = GearContext().client
 
     classification = {'NotToBeFound': ['FLAIR']}
-    return_value = run._validate_classification(fw, 'MR', classification, 'filename')
+    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
     assert return_value == False
     assert 'modality "MR", "NotToBeFound" is not in classification schema' in caplog.messages[0]
 
@@ -168,10 +171,19 @@ def test_validate_classification_bad_modality_fail(caplog):
         mock.side_effect = flywheel.ApiException("oof ApiException", "doc", None)
 
         classification = {'Features': ['MPRAGE', '3D']}
-        return_value = run._validate_classification(fw, 'CT', classification, 'filename')
+        return_value = run.validate_classification(fw, 'CT', classification, 'filename')
 
         assert return_value == False
         assert "oof ApiException" in caplog.messages[0]
 
 
     # _export_files(fw, acquisition, export_acquisition, session, subject, project, config):
+
+def test_validate_modality_without_schema():
+    fw = GearContext().client
+    classification = {'Custom': ['TEST_CUSTOM']}
+    return_value = run.validate_classification(fw, 'FW', classification, 'filename')
+    assert return_value is True
+    classification = {'Custom': ['TEST_CUSTOM'], 'Features': 'bad'}
+    return_value = run.validate_classification(fw, 'FW', classification, 'filename')
+    assert return_value is False

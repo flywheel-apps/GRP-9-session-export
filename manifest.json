@@ -2,11 +2,11 @@
   "name": "session-export",
   "label": "GRP-9: Session Export",
   "description": "Export data (including metadata) from a given session to the specified 'export_project'. The gear will also read DICOM header information from Flywheel metadata and modify DICOM headers to reflect the changes made. Optionally, original data can be 'archived' to an <archive_project>, as configured during the gear execution. The exported, and optionally archived, session will be tagged as appropriate using the 'EXPORTED' tag. At present this gear can only be run at the session level. Output is an export log in csv format.",
-  "version": "1.3.0_rc0",
+  "version": "1.3.0_rc1",
   "custom": {
     "gear-builder": {
       "category": "analysis",
-      "image": "flywheel/session-export:1.3.0_rc0"
+      "image": "flywheel/session-export:1.3.0_rc1"
     },
     "flywheel": {
       "suite": "Data Export"
