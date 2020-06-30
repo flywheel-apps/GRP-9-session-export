@@ -409,6 +409,33 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
             export_acquisition.reload()
 
 
+def ok_to_delete_subject(fw_client, subject_dict, session_dict_list):
+    """
+    Determine whether it is appropriate to delete the subject, based on whether
+        the subject has sessions outside of those created by this gear
+    Args:
+        fw_client (flywheel.Client): an instance of the flywheel client
+        subject_dict (dict): a dictionary that contains key 'id' with a str
+            value equal to a flywheel subject id
+        session_dict_list (list): a list of dicts that contain key 'id' with a
+            str value equal to a flywheel session id
+
+    Returns:
+        bool: whether the subject can safely be deleted
+    """
+
+    session_ids = [sess['id'] for sess in session_dict_list]
+    try:
+        subject_obj = fw_client.get_subject(subject_dict.get('id'))
+
+        for session in subject_obj.sessions.iter():
+            if session.id not in session_ids:
+                return False
+    except:
+        return False
+    return True
+
+
 def _cleanup(fw, creatio):
     """
     In the case of a failure, cleanup all containers that were created.
@@ -432,8 +459,9 @@ def _cleanup(fw, creatio):
     if subjects:
         log.info("Deleting {} subject containers".format(len(subjects)))
         for s in subjects:
-            log.debug(s)
-            fw.delete_subject(s['id'])
+            if ok_to_delete_subject(fw, s, sessions):
+                log.debug('Deleting subject %s', s.get('id'))
+                fw.delete_subject(s['id'])
 
 
 def main(context):
