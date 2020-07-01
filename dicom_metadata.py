@@ -147,13 +147,20 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
                     'MISSING key: {} not found in local_header. \n'.format(key) +
                     'INSERTING valid tag: {} into local dicom file. '.format(key)
                 )
-                if headers_match:
-                    log.warning('Local DICOM header and Flywheel header do NOT match...')
                 headers_match = False
                 update_keys.append(key)
             elif key in local_dicom_header and vr == 'SQ':
-                log_message = 'Sequence (SQ) Tags are not compared for update. \n'
-                log_message += 'Any difference in {} is not accounted for.'.format(key)
+                if local_dicom_header[key] != flywheel_dicom_header[key]:
+                    log_message = 'Sequence (SQ) DICOM Tags are not modified by this gear\n'
+                    log_message += 'Any difference in {} is not accounted for.'.format(key)
+                    log.warning(log_message)
+                    headers_match = False
+                else:
+                    pass
+            elif key not in local_dicom_header and vr == 'SQ':
+                log_message = 'Sequence (SQ) DICOM Tags are not modified by this gear\n'
+                log_message += f'{key} will not be inserted into the dicom file(s)'
+                headers_match = False
                 log.warning(log_message)
             else:
                 # Check if the tags are equal
@@ -170,8 +177,7 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
                             local_dicom_header[key],
                             flywheel_dicom_header[key])
                     else:
-                        if headers_match:
-                            log.warning('Local DICOM header and Flywheel header do NOT match...')
+
                         # Make sure we're comparing the header from the same file...
                         if key == 'SOPInstanceUID':
                             log.warning(
@@ -185,7 +191,8 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
                         headers_match = False
     if headers_match:
         log.info('Local DICOM header and Flywheel headers match!')
-
+    else:
+        log.warning('Local DICOM header and Flywheel header do NOT match...')
     return update_keys
 
 
