@@ -4,3 +4,4 @@ pandas~=1.0.1
 pydicom~=1.4.2
 pytz~=2019.3
 tzlocal~=2.0.0
+backoff~=1.10.0

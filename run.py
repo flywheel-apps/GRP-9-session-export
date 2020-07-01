@@ -11,6 +11,7 @@ import tempfile
 import time
 import zipfile
 
+import backoff
 from pathlib import Path
 from pprint import pprint as pp
 
@@ -26,9 +27,18 @@ log = logging.getLogger('[GRP 9]:')
 log.setLevel(logging.INFO)
 
 
+def false_if_exc_is_timeout(exception):
+    if exception.status in [504, 502]:
+        return False
+    return True
+
+
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
 
+
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
     query_code = quote_numeric_string(subject_code)
@@ -67,6 +77,8 @@ def _find_or_create_subject(fw, session, project, subject_code):
     return subject
 
 
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def _archive_session(fw, session, archive_project):
     """Move session to archive project
 
@@ -283,6 +295,8 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
     return modified_dicom_file_path
 
 
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def validate_classification(fw, f_modality, f_classification, f_name):
     """Make sure classification is valid under the modality schema.
 
@@ -335,6 +349,8 @@ def validate_classification(fw, f_modality, f_classification, f_name):
     return valid_for_modality
 
 
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def _export_files(fw, acquisition, export_acquisition, session, subject, project, config):
     """Export acquisition files to the exported acquisiton.
 
@@ -409,6 +425,8 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
             export_acquisition.reload()
 
 
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def ok_to_delete_subject(fw_client, subject_dict, session_dict_list):
     """
     Determine whether it is appropriate to delete the subject, based on whether
@@ -431,11 +449,16 @@ def ok_to_delete_subject(fw_client, subject_dict, session_dict_list):
         for session in subject_obj.sessions.iter():
             if session.id not in session_ids:
                 return False
-    except:
-        return False
+    except flywheel.rest.ApiException as exc:
+        if exc.status in [403, 404]:
+            return False
+        else:
+            raise exc
     return True
 
 
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def _cleanup(fw, creatio):
     """
     In the case of a failure, cleanup all containers that were created.
@@ -464,6 +487,8 @@ def _cleanup(fw, creatio):
                 fw.delete_subject(s['id'])
 
 
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def main(context):
 
     fw = context.client
@@ -766,6 +791,7 @@ def get_patientsex_from_subject(subject):
     else:
         return ''
 ###############################################################################
+
 
 if __name__ == '__main__':
     with flywheel.GearContext() as context:
