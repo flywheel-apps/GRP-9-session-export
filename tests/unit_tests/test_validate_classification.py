@@ -187,3 +187,10 @@ def test_validate_modality_without_schema():
     classification = {'Custom': ['TEST_CUSTOM'], 'Features': 'bad'}
     return_value = run.validate_classification(fw, 'FW', classification, 'filename')
     assert return_value is False
+
+
+def test_no_modality_with_classification():
+    fw = GearContext().client
+    classification = {'Custom': ['TEST_CUSTOM']}
+    return_value = run.validate_classification(fw, None, classification, 'filename')
+    assert return_value is True

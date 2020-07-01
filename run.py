@@ -313,6 +313,13 @@ def validate_classification(fw, f_modality, f_classification, f_name):
 
     valid_for_modality = True
     classification_schema = dict()
+    if not f_modality:
+        log_msg = (
+            f'file {f_name} does not have a modality. It will be assumed that'
+            f' classification {f_classification} is valid'
+        )
+        log.info(log_msg)
+        return valid_for_modality
     try:
         classification_schema = fw.get_modality(f_modality)
 
