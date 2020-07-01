@@ -468,15 +468,39 @@ def _cleanup(fw, creatio):
     if acquisitions:
         log.info("Deleting {} acquisition containers".format(len(acquisitions)))
         for a in acquisitions:
-            log.debug(a)
-            fw.delete_acquisition(a['id'])
+            try:
+                log.debug(a)
+                fw.delete_acquisition(a['id'])
+            except flywheel.rest.ApiException as exc:
+                if exc.status in [502, 504]:
+                    raise exc
+                else:
+                    a_id = a['id']
+                    error_msg = (
+                        'Exception encountered when attempting to delete'
+                        f' acquisition {a_id}.'
+                    )
+                    log.error(error_msg, exc_info=True)
+                    continue
 
     sessions = [ x for x in creatio if x['container'] == "session" ]
     if sessions:
         log.info("Deleting {} session containers".format(len(sessions)))
         for s in sessions:
             log.debug(s)
-            fw.delete_session(s['id'])
+            try:
+                fw.delete_session(s['id'])
+            except flywheel.rest.ApiException as exc:
+                if exc.status in [502, 504]:
+                    raise exc
+                else:
+                    s_id = s['id']
+                    error_msg = (
+                        'Exception encountered when attempting to delete'
+                        f' session {s_id}.'
+                    )
+                    log.error(error_msg, exc_info=True)
+                    continue
 
     subjects = [ x for x in creatio if x['container'] == "subject" and x['new'] == True ]
     if subjects:
@@ -484,7 +508,19 @@ def _cleanup(fw, creatio):
         for s in subjects:
             if ok_to_delete_subject(fw, s, sessions):
                 log.debug('Deleting subject %s', s.get('id'))
-                fw.delete_subject(s['id'])
+                try:
+                    fw.delete_subject(s['id'])
+                except flywheel.rest.ApiException as exc:
+                    if exc.status in [502, 504]:
+                        raise exc
+                    else:
+                        s_id = s['id']
+                        error_msg = (
+                            'Exception encountered when attempting to delete'
+                            f' subject {s_id}.'
+                        )
+                        log.error(error_msg, exc_info=True)
+                        continue
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
