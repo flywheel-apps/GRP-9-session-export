@@ -254,7 +254,13 @@ def fix_type_based_on_dicom_vm(header):
                         header[key] = '\\'.join([str(item) for item in val])
         else:
             for dataset in val:
-                fix_type_based_on_dicom_vm(dataset)
+                if isinstance(dataset, dict):
+                    fix_type_based_on_dicom_vm(dataset)
+                else:
+                    log.warning(
+                        '%s SQ list item is not a dictionary - value = %s',
+                        key, dataset
+                    )
     if len(exc_keys) > 0:
         log.warning('%s Dicom data elements were not type fixed based on VM', len(exc_keys))
 

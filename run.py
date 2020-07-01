@@ -35,7 +35,7 @@ def _find_or_create_subject(fw, session, project, subject_code):
     subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
     if not subject:
         # If the subject does not exist in the project, make one with the same metadata
-        old_subject = session.subject
+        old_subject = session.subject.reload()
         new_subject = flywheel.Subject(project=project.id,
                                        firstname=old_subject.firstname,
                                        code=subject_code,
@@ -46,6 +46,7 @@ def _find_or_create_subject(fw, session, project, subject_code):
                                        race=old_subject.race,
                                        species=old_subject.species,
                                        strain=old_subject.strain,
+                                       info=old_subject.info,
                                        files=old_subject.files)
 
         # Attempt to create the subject. This may fail as a batch-run.py could
