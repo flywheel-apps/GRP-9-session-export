@@ -530,8 +530,6 @@ def _cleanup(fw, creatio):
                         continue
 
 
-@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_is_timeout)
 def main(context):
 
     fw = context.client
