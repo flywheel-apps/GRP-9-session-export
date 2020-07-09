@@ -33,12 +33,20 @@ def false_if_exc_is_timeout(exception):
     return True
 
 
+def false_if_exc_timeout_or_422(exception):
+    is_timeout = not false_if_exc_is_timeout(exception)
+    if is_timeout or exception.status in [422]:
+        return False
+    else:
+        return True
+
+
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_is_timeout)
+                      max_time=300, giveup=false_if_exc_timeout_or_422)
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
     query_code = quote_numeric_string(subject_code)
