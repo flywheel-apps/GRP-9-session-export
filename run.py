@@ -33,56 +33,99 @@ def false_if_exc_is_timeout(exception):
     return True
 
 
-def false_if_exc_timeout_or_422(exception):
-    is_timeout = not false_if_exc_is_timeout(exception)
-    if is_timeout or exception.status in [422]:
-        return False
-    else:
-        return True
-
-
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_timeout_or_422)
+                      max_time=300, giveup=false_if_exc_is_timeout)
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
-    query_code = quote_numeric_string(subject_code)
-    subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
+    old_subject = get_subject(fw, session.subject.id)
+    subject = find_subject(
+        fw_client=fw, project_id=project.id, subject_code=subject_code
+    )
     if not subject:
-        # If the subject does not exist in the project, make one with the same metadata
-        old_subject = session.subject.reload()
-        new_subject = flywheel.Subject(project=project.id,
-                                       firstname=old_subject.firstname,
-                                       code=subject_code,
-                                       lastname=old_subject.lastname,
-                                       sex=old_subject.sex,
-                                       cohort=old_subject.cohort,
-                                       ethnicity=old_subject.ethnicity,
-                                       race=old_subject.race,
-                                       species=old_subject.species,
-                                       strain=old_subject.strain,
-                                       info=old_subject.info,
-                                       files=old_subject.files)
-
-        # Attempt to create the subject. This may fail as a batch-run.py could
-        # result in the subject having been created already, thus we try/except
-        # and look for the subject again.
         try:
-            response = fw.add_subject(new_subject)
-            subject = fw.get_subject(response)
+            # Attempt to create the subject. This may fail as a batch-run.py could
+            # result in the subject having been created already, thus we try/except
+            # and look for the subject again.
+            subject = create_subject_copy(
+                fw_client=fw, project_id=project.id, subject=old_subject
+            )
+            return subject
+
         except flywheel.ApiException as e:
             log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
-            log.info('Attempting to find subject...')
-            time.sleep(2)
-            subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
-            if subject:
-               log.info('... found subject {}'.format(subject.code))
+            if e.status == 422 and 'already exists' in e.detail:
+                log.info('Attempting to find subject...')
+                exp_gen = backoff.expo()
+                for _ in range(5):
+                    subject = find_subject(
+                        fw_client=fw,
+                        project_id=project.id,
+                        subject_code=subject_code,
+                        retry_wait=next(exp_gen)
+                    )
+                    if subject:
+                        log.info('... found subject {}'.format(subject.code))
+                        return subject
+                if not subject:
+                    err_str = (
+                        'Could not find subject despite exception stating '
+                        f'"{e.detail}" and multiple retries. Exiting...'
+                    )
+                    log.error(err_str)
+                    raise
             else:
-               raise
+                raise
 
+    return subject
+
+
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
+def find_subject(fw_client, project_id, subject_code, retry_wait=0):
+    query_code = quote_numeric_string(subject_code)
+    query = f'project={project_id},code={query_code}'
+    subject = fw_client.subjects.find_first(query)
+    if subject:
+        return subject
+    if retry_wait:
+        log_str = (
+            f'Did not find subject {subject_code}. '
+            f'Waiting {retry_wait} seconds before trying to find subject '
+            f'{subject_code} again.'
+        )
+        log.info(log_str)
+        time.sleep(retry_wait)
+        subject = fw_client.subjects.find_first(query)
+        return subject
+
+
+def create_subject_copy(fw_client, project_id, subject):
+    subject_code = subject.code or subject.label
+    new_subject = flywheel.Subject(project=project_id,
+                                   firstname=subject.firstname,
+                                   code=subject_code,
+                                   lastname=subject.lastname,
+                                   sex=subject.sex,
+                                   cohort=subject.cohort,
+                                   ethnicity=subject.ethnicity,
+                                   race=subject.race,
+                                   species=subject.species,
+                                   strain=subject.strain,
+                                   info=subject.info,
+                                   files=subject.files)
+    subject_id = fw_client.add_subject(new_subject)
+    subject = get_subject(fw_client=fw_client, subject_id=subject_id)
+    return subject
+
+
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
+def get_subject(fw_client, subject_id):
+    subject = fw_client.get_subject(subject_id)
     return subject
 
 
