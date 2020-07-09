@@ -33,15 +33,26 @@ def false_if_exc_is_timeout(exception):
     return True
 
 
+def false_if_exc_timeout_or_sub_exists(exception):
+    is_timeout = not false_if_exc_is_timeout(exception)
+    subject_exists = bool(
+        exception.status == 422 and 'already exists' in exception.detail
+    )
+    if is_timeout or subject_exists:
+        return False
+    else:
+        return True
+
+
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_is_timeout)
+                      max_time=300, giveup=false_if_exc_timeout_or_sub_exists)
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
-    old_subject = get_subject(fw, session.subject.id)
+    old_subject = session.subject.reload()
     subject = find_subject(
         fw_client=fw, project_id=project.id, subject_code=subject_code
     )
@@ -73,7 +84,7 @@ def _find_or_create_subject(fw, session, project, subject_code):
                 if not subject:
                     err_str = (
                         'Could not find subject despite exception stating '
-                        f'"{e.detail}" and multiple retries. Exiting...'
+                        f'"{e.detail}" and multiple retries. '
                     )
                     log.error(err_str)
                     raise
@@ -83,8 +94,6 @@ def _find_or_create_subject(fw, session, project, subject_code):
     return subject
 
 
-@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_is_timeout)
 def find_subject(fw_client, project_id, subject_code, retry_wait=0):
     query_code = quote_numeric_string(subject_code)
     query = f'project={project_id},code={query_code}'
@@ -118,13 +127,6 @@ def create_subject_copy(fw_client, project_id, subject):
                                    info=subject.info,
                                    files=subject.files)
     subject_id = fw_client.add_subject(new_subject)
-    subject = get_subject(fw_client=fw_client, subject_id=subject_id)
-    return subject
-
-
-@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_is_timeout)
-def get_subject(fw_client, subject_id):
     subject = fw_client.get_subject(subject_id)
     return subject
 
