@@ -64,13 +64,17 @@ def _find_or_create_subject(fw, session, project, subject_code):
             subject = create_subject_copy(
                 fw_client=fw, project_id=project.id, subject=old_subject
             )
-            return subject
+            return subject, True
 
         except flywheel.ApiException as e:
-            log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
+            err_str = (
+                f'Could not generate subject {subject_code} in project '
+                f'{project.id}: {e.status} -- {e.reason}'
+            )
+            log.warning(err_str)
             raise
 
-    return subject
+    return subject, False
 
 
 def find_subject(fw_client, project_id, subject_code):
@@ -107,8 +111,10 @@ def _archive_session(fw, session, archive_project):
         'session_id', help='the id of the session to move'
         'archive_project', help='the label of the project to move the subject to'
     """
-
-    subject = _find_or_create_subject(fw, session, archive_project, session.subject.code)
+    subj_code = session.subject.code or session.subject.label
+    subject, _ = _find_or_create_subject(
+        fw, session, archive_project, subj_code
+    )
 
     # Move_session_to_subject (archive)
     session.update({'subject': {'_id': subject.id}})
@@ -632,71 +638,43 @@ def main(context):
         # What we want at the end of this is the export session
         export_session = None
 
-        # Check for subject in a given project
-
-        subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
-
 
         ########################################################################
         # Create Subject
-
+        subject_code = subject.code or subject.label
         sub_export = export_instance.copy()
         sub_export['container'] = "subject"
         sub_export['name'] = subject.code
-        sub_export['origin_path'] = '{}/{}/{}'.format(project.group, project.label, subject.code)
-        sub_export['export_path'] = '{}/{}/{}'.format(export_project.group, export_project.label, subject.code)
+        sub_export['origin_path'] = '{}/{}/{}'.format(project.group, project.label, subject_code)
+        sub_export['export_path'] = '{}/{}/{}'.format(export_project.group, export_project.label, subject_code)
         if archive_project:
-            sub_export['archive_path'] = '{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code)
+            sub_export['archive_path'] = '{}/{}/{}'.format(archive_project.group, archive_project.label, subject_code)
 
-        if not subj:
-            log.info('Subject %s does not exist in project %s.' % (subject.code, export_project.label))
-            log.info('CREATING SUBJECT CONTAINER')
+        subj, created = _find_or_create_subject(
+            fw=fw,
+            session=session,
+            project=export_project,
+            subject_code=subject.code
+        )
+        if created:
+            log_str = (
+                f'Created subject {subject_code} in project '
+                f'{export_project.label}'
+            )
+            log.info(log_str)
             sub_export['status'] = "created"
-            subject_keys = ['code',
-                            'cohort',
-                            'ethnicity',
-                            'firstname',
-                            'info',
-                            'label',
-                            'lastname',
-                            'race',
-                            'sex',
-                            'species',
-                            'strain',
-                            'tags',
-                            'type'
-                           ]
-            subject_metadata = {}
-            for key in subject_keys:
-                value = subject.get(key)
-                if value:
-                    subject_metadata[key] = value
+            c = creatio_instance.copy()
+            c['container'] = 'subject'
+            c['id'] = subj.id
+            c['new'] = True
+            creatio.append(c)
 
-            # Attempt to create the subject. This may fail as a batch-run.py could
-            # result in the subject having been created already, thus we try/except
-            # and look for the subject again.
-            try:
-                subj = export_project.add_subject(subject_metadata)
-                log.info('Created %s in %s' % (subj.code, export_project.label))
-
-                c = creatio_instance.copy()
-                c['container'] = 'subject'
-                c['id'] = subj.id
-                c['new'] = True
-                creatio.append(c)
-            except flywheel.ApiException as e:
-                log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
-                log.info('Attempting to find subject...')
-                time.sleep(2)
-                subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
-                if subj:
-                    log.info('... found existing subject %s in project: %s. Using existing container.'
-                             % (subj.code, export_project.label))
-                    sub_export['status'] = "used existing"
-                else:
-                    raise
         else:
-            log.info('Found existing subject %s in project: %s. Using existing container.' % (subj.code, export_project.label))
+            log_str = (
+                f'Found existing subject {subject_code} in project: '
+                f'{export_project.label}. Using existing container.'
+            )
+            log.info(log_str)
             sub_export['status'] = "used existing"
 
         export_data.append(sub_export)
