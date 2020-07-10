@@ -68,48 +68,16 @@ def _find_or_create_subject(fw, session, project, subject_code):
 
         except flywheel.ApiException as e:
             log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
-            if e.status == 422 and 'already exists' in e.detail:
-                log.info('Attempting to find subject...')
-                exp_gen = backoff.expo()
-                for _ in range(5):
-                    subject = find_subject(
-                        fw_client=fw,
-                        project_id=project.id,
-                        subject_code=subject_code,
-                        retry_wait=next(exp_gen)
-                    )
-                    if subject:
-                        log.info('... found subject {}'.format(subject.code))
-                        return subject
-                if not subject:
-                    err_str = (
-                        'Could not find subject despite exception stating '
-                        f'"{e.detail}" and multiple retries. '
-                    )
-                    log.error(err_str)
-                    raise
-            else:
-                raise
+            raise
 
     return subject
 
 
-def find_subject(fw_client, project_id, subject_code, retry_wait=0):
+def find_subject(fw_client, project_id, subject_code):
     query_code = quote_numeric_string(subject_code)
     query = f'project={project_id},code={query_code}'
     subject = fw_client.subjects.find_first(query)
-    if subject:
-        return subject
-    if retry_wait:
-        log_str = (
-            f'Did not find subject {subject_code}. '
-            f'Waiting {retry_wait} seconds before trying to find subject '
-            f'{subject_code} again.'
-        )
-        log.info(log_str)
-        time.sleep(retry_wait)
-        subject = fw_client.subjects.find_first(query)
-        return subject
+    return subject
 
 
 def create_subject_copy(fw_client, project_id, subject):
