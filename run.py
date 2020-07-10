@@ -96,8 +96,7 @@ def create_subject_copy(fw_client, project_id, subject):
                                    race=subject.race,
                                    species=subject.species,
                                    strain=subject.strain,
-                                   info=subject.info,
-                                   files=subject.files)
+                                   info=subject.info)
     subject_id = fw_client.add_subject(new_subject)
     subject = fw_client.get_subject(subject_id)
     return subject
@@ -323,6 +322,16 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
     return modified_dicom_file_path
 
 
+def class_dict_invalid(classification):
+    return_val = False
+    if not isinstance(classification, dict) or not classification:
+        return True
+    for value in classification.values():
+        if not isinstance(value, list) or len(value) < 1:
+            return_val = True
+    return return_val
+
+
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
                       max_time=300, giveup=false_if_exc_is_timeout)
 def validate_classification(fw, f_modality, f_classification, f_name):
@@ -341,6 +350,8 @@ def validate_classification(fw, f_modality, f_classification, f_name):
 
     valid_for_modality = True
     classification_schema = dict()
+    if class_dict_invalid(f_classification):
+        return False
     if not f_modality:
         log_msg = (
             f'file {f_name} does not have a modality. It will be assumed that'
@@ -367,7 +378,6 @@ def validate_classification(fw, f_modality, f_classification, f_name):
     if valid_for_modality:
 
         for key, values in f_classification.items():
-
             if key in classification_dict:
                 for val in values:
 
