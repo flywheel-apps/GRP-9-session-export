@@ -33,48 +33,72 @@ def false_if_exc_is_timeout(exception):
     return True
 
 
+def false_if_exc_timeout_or_sub_exists(exception):
+    is_timeout = not false_if_exc_is_timeout(exception)
+    subject_exists = bool(
+        exception.status == 422 and 'already exists' in exception.detail
+    )
+    if is_timeout or subject_exists:
+        return False
+    else:
+        return True
+
+
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_is_timeout)
+                      max_time=300, giveup=false_if_exc_timeout_or_sub_exists)
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
-    query_code = quote_numeric_string(subject_code)
-    subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
+    old_subject = session.subject.reload()
+    subject = find_subject(
+        fw_client=fw, project_id=project.id, subject_code=subject_code
+    )
     if not subject:
-        # If the subject does not exist in the project, make one with the same metadata
-        old_subject = session.subject.reload()
-        new_subject = flywheel.Subject(project=project.id,
-                                       firstname=old_subject.firstname,
-                                       code=subject_code,
-                                       lastname=old_subject.lastname,
-                                       sex=old_subject.sex,
-                                       cohort=old_subject.cohort,
-                                       ethnicity=old_subject.ethnicity,
-                                       race=old_subject.race,
-                                       species=old_subject.species,
-                                       strain=old_subject.strain,
-                                       info=old_subject.info,
-                                       files=old_subject.files)
-
-        # Attempt to create the subject. This may fail as a batch-run.py could
-        # result in the subject having been created already, thus we try/except
-        # and look for the subject again.
         try:
-            response = fw.add_subject(new_subject)
-            subject = fw.get_subject(response)
-        except flywheel.ApiException as e:
-            log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
-            log.info('Attempting to find subject...')
-            time.sleep(2)
-            subject = fw.subjects.find_first(filter='project={},code={}'.format(project.id, query_code))
-            if subject:
-               log.info('... found subject {}'.format(subject.code))
-            else:
-               raise
+            # Attempt to create the subject. This may fail as a batch-run.py could
+            # result in the subject having been created already, thus we try/except
+            # and look for the subject again.
+            subject = create_subject_copy(
+                fw_client=fw, project_id=project.id, subject=old_subject
+            )
+            return subject, True
 
+        except flywheel.ApiException as e:
+            err_str = (
+                f'Could not generate subject {subject_code} in project '
+                f'{project.id}: {e.status} -- {e.reason}'
+            )
+            log.warning(err_str)
+            raise
+
+    return subject, False
+
+
+def find_subject(fw_client, project_id, subject_code):
+    query_code = quote_numeric_string(subject_code)
+    query = f'project={project_id},code={query_code}'
+    subject = fw_client.subjects.find_first(query)
+    return subject
+
+
+def create_subject_copy(fw_client, project_id, subject):
+    subject_code = subject.code or subject.label
+    new_subject = flywheel.Subject(project=project_id,
+                                   firstname=subject.firstname,
+                                   code=subject_code,
+                                   lastname=subject.lastname,
+                                   sex=subject.sex,
+                                   cohort=subject.cohort,
+                                   ethnicity=subject.ethnicity,
+                                   race=subject.race,
+                                   species=subject.species,
+                                   strain=subject.strain,
+                                   info=subject.info)
+    subject_id = fw_client.add_subject(new_subject)
+    subject = fw_client.get_subject(subject_id)
     return subject
 
 
@@ -86,8 +110,10 @@ def _archive_session(fw, session, archive_project):
         'session_id', help='the id of the session to move'
         'archive_project', help='the label of the project to move the subject to'
     """
-
-    subject = _find_or_create_subject(fw, session, archive_project, session.subject.code)
+    subj_code = session.subject.code or session.subject.label
+    subject, _ = _find_or_create_subject(
+        fw, session, archive_project, subj_code
+    )
 
     # Move_session_to_subject (archive)
     session.update({'subject': {'_id': subject.id}})
@@ -296,6 +322,15 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
     return modified_dicom_file_path
 
 
+def class_dict_invalid(classification):
+    if not isinstance(classification, dict) or not classification:
+        return True
+    for value in classification.values():
+        if not isinstance(value, list) or len(value) < 1:
+            return True
+    return False
+
+
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
                       max_time=300, giveup=false_if_exc_is_timeout)
 def validate_classification(fw, f_modality, f_classification, f_name):
@@ -314,6 +349,8 @@ def validate_classification(fw, f_modality, f_classification, f_name):
 
     valid_for_modality = True
     classification_schema = dict()
+    if class_dict_invalid(f_classification):
+        return False
     if not f_modality:
         log_msg = (
             f'file {f_name} does not have a modality. It will be assumed that'
@@ -340,7 +377,6 @@ def validate_classification(fw, f_modality, f_classification, f_name):
     if valid_for_modality:
 
         for key, values in f_classification.items():
-
             if key in classification_dict:
                 for val in values:
 
@@ -611,71 +647,43 @@ def main(context):
         # What we want at the end of this is the export session
         export_session = None
 
-        # Check for subject in a given project
-
-        subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
-
 
         ########################################################################
         # Create Subject
-
+        subject_code = subject.code or subject.label
         sub_export = export_instance.copy()
         sub_export['container'] = "subject"
         sub_export['name'] = subject.code
-        sub_export['origin_path'] = '{}/{}/{}'.format(project.group, project.label, subject.code)
-        sub_export['export_path'] = '{}/{}/{}'.format(export_project.group, export_project.label, subject.code)
+        sub_export['origin_path'] = '{}/{}/{}'.format(project.group, project.label, subject_code)
+        sub_export['export_path'] = '{}/{}/{}'.format(export_project.group, export_project.label, subject_code)
         if archive_project:
-            sub_export['archive_path'] = '{}/{}/{}'.format(archive_project.group, archive_project.label, subject.code)
+            sub_export['archive_path'] = '{}/{}/{}'.format(archive_project.group, archive_project.label, subject_code)
 
-        if not subj:
-            log.info('Subject %s does not exist in project %s.' % (subject.code, export_project.label))
-            log.info('CREATING SUBJECT CONTAINER')
+        subj, created = _find_or_create_subject(
+            fw=fw,
+            session=session,
+            project=export_project,
+            subject_code=subject.code
+        )
+        if created:
+            log_str = (
+                f'Created subject {subject_code} in project '
+                f'{export_project.label}'
+            )
+            log.info(log_str)
             sub_export['status'] = "created"
-            subject_keys = ['code',
-                            'cohort',
-                            'ethnicity',
-                            'firstname',
-                            'info',
-                            'label',
-                            'lastname',
-                            'race',
-                            'sex',
-                            'species',
-                            'strain',
-                            'tags',
-                            'type'
-                           ]
-            subject_metadata = {}
-            for key in subject_keys:
-                value = subject.get(key)
-                if value:
-                    subject_metadata[key] = value
+            c = creatio_instance.copy()
+            c['container'] = 'subject'
+            c['id'] = subj.id
+            c['new'] = True
+            creatio.append(c)
 
-            # Attempt to create the subject. This may fail as a batch-run.py could
-            # result in the subject having been created already, thus we try/except
-            # and look for the subject again.
-            try:
-                subj = export_project.add_subject(subject_metadata)
-                log.info('Created %s in %s' % (subj.code, export_project.label))
-
-                c = creatio_instance.copy()
-                c['container'] = 'subject'
-                c['id'] = subj.id
-                c['new'] = True
-                creatio.append(c)
-            except flywheel.ApiException as e:
-                log.warning('Could not generate subject: {} -- {}'.format(e.status, e.reason))
-                log.info('Attempting to find subject...')
-                time.sleep(2)
-                subj = export_project.subjects.find_first('code=%s' % quote_numeric_string(subject.code))
-                if subj:
-                    log.info('... found existing subject %s in project: %s. Using existing container.'
-                             % (subj.code, export_project.label))
-                    sub_export['status'] = "used existing"
-                else:
-                    raise
         else:
-            log.info('Found existing subject %s in project: %s. Using existing container.' % (subj.code, export_project.label))
+            log_str = (
+                f'Found existing subject {subject_code} in project: '
+                f'{export_project.label}. Using existing container.'
+            )
+            log.info(log_str)
             sub_export['status'] = "used existing"
 
         export_data.append(sub_export)

@@ -194,3 +194,13 @@ def test_no_modality_with_classification():
     classification = {'Custom': ['TEST_CUSTOM']}
     return_value = run.validate_classification(fw, None, classification, 'filename')
     assert return_value is True
+
+
+def test_empty_classifications():
+    fw = GearContext().client
+    classification = {}
+    return_value = run.validate_classification(fw, None, classification, 'filename')
+    assert return_value is False
+    classification = {'Intent': [], 'Measurement': []}
+    return_value = run.validate_classification(fw, None, classification, 'filename')
+    assert return_value is False
