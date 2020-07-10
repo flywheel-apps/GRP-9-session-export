@@ -323,13 +323,12 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
 
 
 def class_dict_invalid(classification):
-    return_val = False
     if not isinstance(classification, dict) or not classification:
         return True
     for value in classification.values():
         if not isinstance(value, list) or len(value) < 1:
-            return_val = True
-    return return_val
+            return True
+    return False
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
