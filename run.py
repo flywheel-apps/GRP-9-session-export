@@ -28,7 +28,7 @@ log.setLevel(logging.INFO)
 
 
 def false_if_exc_is_timeout(exception):
-    if exception.status in [504, 502]:
+    if exception.status in [504, 502, 500]:
         return False
     return True
 
@@ -36,7 +36,7 @@ def false_if_exc_is_timeout(exception):
 def false_if_exc_timeout_or_sub_exists(exception):
     is_timeout = not false_if_exc_is_timeout(exception)
     subject_exists = bool(
-        exception.status == 422 and 'already exists' in exception.detail
+        exception.status in [409, 422] and 'already exists' in exception.detail
     )
     if is_timeout or subject_exists:
         return False
@@ -49,7 +49,8 @@ def false_if_exc_timeout_or_sub_exists(exception):
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
-                      max_time=300, giveup=false_if_exc_timeout_or_sub_exists)
+                      max_time=300, giveup=false_if_exc_timeout_or_sub_exists,
+                      jitter=backoff.full_jitter)
 def _find_or_create_subject(fw, session, project, subject_code):
     # Try to find if a subject with that code already exists in the project
     old_subject = session.subject.reload()
