@@ -323,6 +323,14 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
     return modified_dicom_file_path
 
 
+def remove_empty_lists_from_dict(input_dict):
+    new_dict = input_dict.copy()
+    for key, value in input_dict.items():
+        if not value and isinstance(value, list):
+            new_dict.pop(key)
+    return new_dict
+
+
 def class_dict_invalid(classification):
     if not isinstance(classification, dict) or not classification:
         return True
@@ -350,6 +358,7 @@ def validate_classification(fw, f_modality, f_classification, f_name):
 
     valid_for_modality = True
     classification_schema = dict()
+    f_classification = remove_empty_lists_from_dict(f_classification)
     if class_dict_invalid(f_classification):
         return False
     if not f_modality:
