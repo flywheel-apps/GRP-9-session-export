@@ -358,7 +358,8 @@ def validate_classification(fw, f_modality, f_classification, f_name):
 
     valid_for_modality = True
     classification_schema = dict()
-    f_classification = remove_empty_lists_from_dict(f_classification)
+    if isinstance(f_classification, dict):
+        f_classification = remove_empty_lists_from_dict(f_classification)
     if class_dict_invalid(f_classification):
         return False
     if not f_modality:
@@ -467,9 +468,11 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
                 log.debug('Updating type to %s for %s' % (f.type, f.name))
                 export_acquisition.update_file(f.name, type=f.type)
             if f.classification:
-                if validate_classification(fw, f.modality, f.classification, f.name):
-                    log.debug('Updating classification to %s for %s' % (f.classification, f.name))
-                    export_acquisition.update_file_classification(f.name, f.classification)
+                classification_dict = remove_empty_lists_from_dict(f.classification)
+                if validate_classification(fw, f.modality, classification_dict, f.name):
+
+                    log.debug('Updating classification to %s for %s' % (classification_dict, f.name))
+                    export_acquisition.update_file_classification(f.name, classification_dict)
                 else:
                     log.error('Not updating classification to %s for %s' % (f.classification, f.name))
             if f.info:
