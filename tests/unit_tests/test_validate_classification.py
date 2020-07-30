@@ -204,3 +204,17 @@ def test_empty_classifications():
     classification = {'Intent': [], 'Measurement': []}
     return_value = run.validate_classification(fw, None, classification, 'filename')
     assert return_value is False
+
+
+def test_classification_with_empty_and_populated_lists():
+    fw = GearContext().client
+    classification = {'Intent': ['Structural'], 'Features': ['FLAIR'], 'Custom': []}
+    return_value = run.validate_classification(fw, None, classification, 'filename')
+    assert return_value is True
+
+
+def test_remove_empty_lists_from_dict():
+    classification = {'Intent': ['Structural'], 'Features': ['FLAIR'], 'Custom': []}
+    expected_dict = {'Intent': ['Structural'], 'Features': ['FLAIR']}
+    return_value = run.remove_empty_lists_from_dict(classification)
+    assert return_value == expected_dict
