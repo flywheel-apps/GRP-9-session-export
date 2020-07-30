@@ -70,6 +70,15 @@ def _copy_files_from_session(fw, from_session, to_session):
         return
 
     for session_file in session_files:
+        
+        if session_file.type == 'dicom':
+            log.warning(f"File {session_file.name} is type DICOM.\n"
+                        f"DICOMS Uploaded as attachments to a session will NOT be migrated,\n"
+                        f"As we cannot properly ensure de-identification at this level.\n"
+                        f"{session_file.name} Will be Skipped")
+            continue
+
+        
         download_file = os.path.join('/tmp', session_file.name)
         log.debug(f"\tdownloading file {session_file.name} to {download_file}")
         from_session.download_file(session_file.name, download_file)
