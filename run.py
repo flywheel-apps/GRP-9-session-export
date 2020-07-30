@@ -57,7 +57,7 @@ def false_if_exc_timeout_or_sub_exists(exception):
                       max_time=300, giveup=false_if_exc_is_timeout,
                       jitter=backoff.full_jitter)
 def _copy_files_from_session(fw, from_session, to_session):
-    """Copies file attachments from one session to another
+    """Exports file attachments from one session to another. DICOM files will not be exported.
 
     1. Download each file from "from_session"
     2. Upload each file to "from_session"
@@ -85,7 +85,7 @@ def _copy_files_from_session(fw, from_session, to_session):
         if session_file.type == 'dicom':
             log.warning(f"File {session_file.name} is type DICOM.\n"
                         f"DICOMS Uploaded as attachments to a session will NOT be migrated,\n"
-                        f"As we cannot properly ensure de-identification at this level.\n"
+                        f"As we do not support DICOM mapping at this level.\n"
                         f"{session_file.name} Will be Skipped")
             continue
 
