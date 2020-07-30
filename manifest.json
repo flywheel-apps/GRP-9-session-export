@@ -6,7 +6,7 @@
   "custom": {
     "gear-builder": {
       "category": "analysis",
-      "image": "flywheel/session-export:1.3.3"
+      "image": "flywheel/session-export:1.4.0"
     },
     "flywheel": {
       "suite": "Data Export"
