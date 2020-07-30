@@ -47,6 +47,54 @@ def false_if_exc_timeout_or_sub_exists(exception):
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
 
+def _copy_files_from_session(fw, from_session, to_session):
+    """Copies file attachments from one session to another
+
+    1. Download each file from "from_session"
+    2. Upload each file to "from_session"
+
+
+    Args:
+        fw (flywheel.Client): A flywheel client
+        from_session (flywheel.Session): An existing flywheel session that has attached files to be
+        copied over to "to_session"
+        to_session (flywheel.Session): An existing flywheel session that will have the files from
+        "from_session" copied over to.
+
+    """
+    log.info(f"Transferring session {from_session.label} attachment files...")
+
+    session_files = [f for f in from_session.files]
+    if len(session_files) == 0:
+        log.info('No files to copy over')
+        return
+
+    for session_file in session_files:
+        download_file = os.path.join('/tmp', session_file.name)
+        log.debug(f"\tdownloading file {session_file.name} to {download_file}")
+        from_session.download_file(session_file.name, download_file)
+        log.debug("\tcomplete")
+
+        log.debug("\tuploading file to new session")
+        try:
+            metad = {"info": session_file.info}
+            json_metad = json.dumps(metad)
+        except Exception as e:
+            log.warning('Error converting metadata to string')
+            log.exception(e)
+            log.warning('Continuing without metadata upload')
+            json_metad = json.dumps({'info': {}})
+
+        fw.upload_file_to_session(to_session.id, download_file, metadata=json_metad)
+        log.debug("\tcomplete")
+
+        log.debug('\tCleaning up file')
+        os.remove(download_file)
+
+        log.debug(f"\tFinished file {session_file.name}")
+
+    log.info("Finished Transferring Session Files")
+
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
                       max_time=300, giveup=false_if_exc_timeout_or_sub_exists,
@@ -744,7 +792,10 @@ def main(context):
         for tag in session.tags:
             export_session.add_tag(tag)
 
-
+        # Copy over files from old session to new session
+        if context.config['export_session_attachments']:
+            _copy_files_from_session(fw, session, export_session)
+            
 
         ########################################################################
         # For each acquisition, create the export_acquisition, upload and modify the files
