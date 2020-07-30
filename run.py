@@ -92,10 +92,6 @@ def _copy_files_from_session(fw, from_session, to_session):
         
         try:
             
-            if session_file.name in [f.name for f in to_session.files]:
-                log.warning(f"file {session_file.name} exists in target session and will be overwritten")
-            
-            
             download_file = os.path.join('/tmp', session_file.name)
             log.debug(f"\tdownloading file {session_file.name} to {download_file}")
             from_session.download_file(session_file.name, download_file)
