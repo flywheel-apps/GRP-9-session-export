@@ -48,7 +48,7 @@ def false_if_exc_timeout_or_sub_exists(exception):
 # LOCAL FUNCTION DEFINITIONS
 
 def _copy_files_from_session(fw, from_session, to_session):
-    """Copies file attachments from one session to another
+    """Exports file attachments from one session to another. DICOM files will not be exported.
 
     1. Download each file from "from_session"
     2. Upload each file to "from_session"
