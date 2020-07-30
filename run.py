@@ -74,7 +74,7 @@ def _copy_files_from_session(fw, from_session, to_session):
         if session_file.type == 'dicom':
             log.warning(f"File {session_file.name} is type DICOM.\n"
                         f"DICOMS Uploaded as attachments to a session will NOT be migrated,\n"
-                        f"As we cannot properly ensure de-identification at this level.\n"
+                        f"As we do not support DICOM mapping at this level.\n"
                         f"{session_file.name} Will be Skipped")
             continue
 
