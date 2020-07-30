@@ -44,15 +44,26 @@ def false_if_exc_timeout_or_sub_exists(exception):
         return True
 
 
+
+
+
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
 
+
+# Backoff giveup only checks for timeout, not "exists" because file uploads do not
+# Give "already exists" errors
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout,
+                      jitter=backoff.full_jitter)
 def _copy_files_from_session(fw, from_session, to_session):
     """Copies file attachments from one session to another
 
     1. Download each file from "from_session"
     2. Upload each file to "from_session"
-
+    
+    NOTE:  This will overwrite any existing files on the target session that already
+    exist with the same name.
 
     Args:
         fw (flywheel.Client): A flywheel client
@@ -79,29 +90,43 @@ def _copy_files_from_session(fw, from_session, to_session):
             continue
 
         
-        download_file = os.path.join('/tmp', session_file.name)
-        log.debug(f"\tdownloading file {session_file.name} to {download_file}")
-        from_session.download_file(session_file.name, download_file)
-        log.debug("\tcomplete")
-
-        log.debug("\tuploading file to new session")
         try:
-            metad = {"info": session_file.info}
-            json_metad = json.dumps(metad)
-        except Exception as e:
-            log.warning('Error converting metadata to string')
-            log.exception(e)
-            log.warning('Continuing without metadata upload')
-            json_metad = json.dumps({'info': {}})
-
-        fw.upload_file_to_session(to_session.id, download_file, metadata=json_metad)
-        log.debug("\tcomplete")
-
-        log.debug('\tCleaning up file')
-        os.remove(download_file)
-
-        log.debug(f"\tFinished file {session_file.name}")
-
+            
+            if session_file.name in [f.name for f in to_session.files]:
+                log.warning(f"file {session_file.name} exists in target session and will be overwritten")
+            
+            
+            download_file = os.path.join('/tmp', session_file.name)
+            log.debug(f"\tdownloading file {session_file.name} to {download_file}")
+            from_session.download_file(session_file.name, download_file)
+            log.debug("\tcomplete")
+    
+            log.debug("\tuploading file to new session")
+            try:
+                metad = {"info": session_file.info}
+                json_metad = json.dumps(metad)
+            except Exception as e:
+                log.warning('Error converting metadata to string')
+                log.exception(e)
+                log.warning('Continuing without metadata upload')
+                json_metad = json.dumps({'info': {}})
+    
+            fw.upload_file_to_session(to_session.id, download_file, metadata=json_metad)
+            log.debug("\tcomplete")
+    
+            log.debug('\tCleaning up file')
+            os.remove(download_file)
+    
+            log.debug(f"\tFinished file {session_file.name}")
+        
+        except flywheel.ApiException as e:
+            err_str = (
+                f'Could not export file {session_file.name} from session '
+                f'{from_session.label} to session {to_session.label} {e.reason}'
+            )
+            log.warning(err_str)
+            raise
+                
     log.info("Finished Transferring Session Files")
 
 
