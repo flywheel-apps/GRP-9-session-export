@@ -44,8 +44,109 @@ def false_if_exc_timeout_or_sub_exists(exception):
         return True
 
 
+
+
+
 ###############################################################################
 # LOCAL FUNCTION DEFINITIONS
+
+
+# Backoff giveup only checks for timeout, not "exists" because file uploads do not
+# Give "already exists" errors
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout,
+                      jitter=backoff.full_jitter)
+def _copy_files_from_session(fw, from_session, to_session):
+    """Exports file attachments from one session to another. DICOM files will not be exported.
+
+    1. Download each file from "from_session"
+    2. Upload each file to "to_session"
+    
+    NOTE:  This will overwrite any existing files on the target session that already
+    exist with the same name.
+
+    Args:
+        fw (flywheel.Client): A flywheel client
+        from_session (flywheel.Session): An existing flywheel session that has attached files to be
+        copied over to "to_session"
+        to_session (flywheel.Session): An existing flywheel session that will have the files from
+        "from_session" copied over to.
+
+    """
+    log.debug(f"Copying session {from_session.label} file attachments to session {to_session.label}")
+
+    session_files = [f for f in from_session.files]
+    if len(session_files) == 0:
+        log.debug('No files to copy over')
+        return
+
+    for session_file in session_files:
+        
+        if session_file.type == 'dicom':
+            log.warning(f"File {session_file.name} is type DICOM.\n"
+                        f"DICOMS Uploaded as attachments to a session will NOT be exported,\n"
+                        f"As we do not support DICOM mapping at this level.\n"
+                        f"{session_file.name} Will be Skipped")
+            continue
+
+        
+        try:
+            
+            download_file = os.path.join('/tmp', session_file.name)
+            log.debug(f"\tdownloading file {session_file.name} to {download_file}")
+            from_session.download_file(session_file.name, download_file)
+            log.debug("\tcomplete")
+    
+            log.debug("\tuploading file to new session")
+            
+            to_session.upload_file(download_file)
+            to_session = to_session.reload()
+            new_file = to_session.get_file(name=session_file.name)
+            _update_file_metadata(fw, session_file, new_file)
+            
+            log.debug("\tcomplete")
+    
+            log.debug('\tCleaning up file')
+            os.remove(download_file)
+    
+            log.debug(f"\tFinished file {session_file.name}")
+        
+        except flywheel.ApiException as e:
+            err_str = (
+                f'Could not export file {session_file.name} from session '
+                f'{from_session.label} to session {to_session.label} {e.reason}'
+            )
+            log.warning(err_str)
+            raise
+                
+    log.info("Finished Transferring Session Files")
+
+
+def _update_file_metadata(fw, orig_f, new_f):
+    
+    # Update file metadata
+    if orig_f.modality:
+        log.debug('Updating modality to %s for %s' % (orig_f.modality, new_f.name))
+        new_f.update(modality=orig_f.modality)
+    if not orig_f.modality and orig_f.name.endswith('mriqc.qa.html'):
+        # Special case - mriqc output files do not have modality set, so
+        # we must set the modality prior to the classification to avoid errors.
+        new_f.update(modality='MR')
+    if orig_f.type:
+        log.debug('Updating type to %s for %s' % (orig_f.type, orig_f.name))
+        new_f.update(type=orig_f.type)
+    if orig_f.classification:
+        classification_dict = remove_empty_lists_from_dict(orig_f.classification)
+        if validate_classification(fw, orig_f.modality, classification_dict, orig_f.name):
+
+            log.debug('Updating classification to %s for %s' % (classification_dict, new_f.name))
+            new_f.update_classification(classification_dict)
+        else:
+            log.error('Not updating classification to %s for %s' % (orig_f.classification, new_f.name))
+    if orig_f.info:
+        log.debug('Updating info for %s' % (new_f.name))
+        new_f.update_info(orig_f.info)
+    
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
@@ -744,7 +845,10 @@ def main(context):
         for tag in session.tags:
             export_session.add_tag(tag)
 
-
+        # Copy over files from old session to new session
+        if context.config['export_session_attachments']:
+            _copy_files_from_session(fw, session, export_session)
+            
 
         ########################################################################
         # For each acquisition, create the export_acquisition, upload and modify the files
