@@ -3,6 +3,8 @@ MAINTAINER Flywheel <support@flywheel.io>
 
 COPY requirements.txt /opt
 
+RUN apt-get update && apt-get install -y git
+
 RUN pip install -r /opt/requirements.txt
 
 WORKDIR /flywheel/v0

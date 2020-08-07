@@ -33,6 +33,9 @@ def assign_type(s):
                 return [format_string(x) for x in s if len(x) > 0]
     elif type(s) == float or type(s) == int:
         return s
+    elif type(s) == pydicom.uid.UID:
+        s = str(s)
+        return format_string(s)
     else:
         s = str(s)
         try:
@@ -132,7 +135,7 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
         # Generate a list of keys that need to be updated within the local dicom file
         # Compare the headers, and track which keys are different
         # Exclude Sequence Tags and list values which match non-list values
-        for key in sorted(flywheel_dicom_header.keys()):
+        for key, value in sorted(flywheel_dicom_header.items()):
             try:
                 vr, vm, _, _, _ = DicomDictionary.get(tag_for_keyword(key))
             except (ValueError, TypeError):
@@ -141,6 +144,14 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
                     'It will not be considered to update the DICOM file.'
                 )
                 continue
+            # handle integer UIDs
+            if vr.lower() == 'ui' and isinstance(value, (float, int)):
+                info_str = (
+                    f"Tag {key} is represented as a numeric in Flywheel "
+                    f"but should be a string. Converting..."
+                )
+                log.info(info_str)
+                flywheel_dicom_header[key] = local_dicom_header[key]
 
             if key not in local_dicom_header and vr != 'SQ':
                 log.warning(
@@ -456,7 +467,7 @@ def get_dicom_df(dicom_path_list, specific_tag_list=None, force=False):
         df = pd.DataFrame(dict_list)
         return df
     else:
-        return None
+        return pd.DataFrame()
 
 
 def filter_update_keys(update_keys, dicom_path_list, force=False):
@@ -478,19 +489,20 @@ def filter_update_keys(update_keys, dicom_path_list, force=False):
         if DicomDictionary.get(tag_for_keyword(key)):
             if DicomDictionary.get(tag_for_keyword(key))[0] != 'SQ':
                 filtered_keys.append(key)
-
-    df = get_dicom_df(dicom_path_list, specific_tag_list=update_keys, force=force)
-    df = df.applymap(make_list_hashable)
-    exc_keys = list()
-    for key, value in df.nunique().items():
-        if value > 1:
-            log_str = (
-                'DICOM tag %s has more than one unique value across the'
-                'DICOM archive. This tag will not be edited in DICOM headers.'
-            )
-            log.warning(log_str, key)
-            exc_keys.append(key)
-    filtered_keys = [key for key in filtered_keys if key not in exc_keys]
+    # If there's only one file, we already know each tag only has one unique val
+    if len(dicom_path_list) > 1:
+        df = get_dicom_df(dicom_path_list, specific_tag_list=update_keys, force=force)
+        df = df.applymap(make_list_hashable)
+        exc_keys = list()
+        for key, value in df.nunique().items():
+            if value > 1:
+                log_str = (
+                    'DICOM tag %s has more than one unique value across the'
+                    'DICOM archive. This tag will not be edited in DICOM headers.'
+                )
+                log.warning(log_str, key)
+                exc_keys.append(key)
+        filtered_keys = [key for key in filtered_keys if key not in exc_keys]
     return filtered_keys
 
 

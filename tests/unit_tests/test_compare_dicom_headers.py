@@ -209,3 +209,11 @@ def test_dicom_header_compare_VM_backward_compatibility():
     assert 'WindowWidth' not in update_keys
     assert 'WindowCenter' not in update_keys
     assert 'StudyID' not in update_keys
+
+
+def test_UID_int_converts_to_str():
+    local_header = {'SeriesInstanceUID': '123456789876543210123456789'}
+    flywheel_header = {'SeriesInstanceUID': 123456789876543210123456789}
+    return_val = compare_dicom_headers(local_header, flywheel_header)
+    assert return_val == []
+    assert flywheel_header.get('SeriesInstanceUID') == '123456789876543210123456789'

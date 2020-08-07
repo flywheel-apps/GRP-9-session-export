@@ -1,7 +1,7 @@
 jsonschema~=3.2.0
 flywheel-sdk~=11.0.0
 pandas~=1.0.1
-pydicom~=1.4.2
+git+https://github.com/pydicom/pydicom.git@9561c5d40ec96076c974b5987767dc7b78c500a6
 pytz~=2019.3
 tzlocal~=2.0.0
 backoff~=1.10.0
