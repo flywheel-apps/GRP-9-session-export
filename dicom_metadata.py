@@ -21,7 +21,7 @@ def assign_type(s):
     """
     Sets the type of a given input.
     """
-    if type(s) == pydicom.valuerep.PersonName or type(s) == pydicom.valuerep.PersonName3 or type(s) == pydicom.valuerep.PersonNameBase:
+    if type(s) == pydicom.valuerep.PersonName:
         return format_string(s)
     if type(s) == list or type(s) == pydicom.multival.MultiValue:
         try:
@@ -387,8 +387,9 @@ def dicom_header_extract(file_path, flywheel_header_dict):
             last = bool(idx == (len(dcm_path_list) - 1))
             tmp_dcm_data_dict = get_dcm_data_dict(dcm_path, force=True)
             if dcm_dict_is_representative(tmp_dcm_data_dict, use_rawdatastorage=last):
+                log.info('Using header dicom at %s', dcm_path)
                 dcm_header_dict = tmp_dcm_data_dict.get('header')
-            break
+                break
     else:
         dcm_header_dict = get_dcm_data_dict(dcm_path, force=True).get('header', dict())
 
@@ -441,6 +442,11 @@ def select_matching_file(file_list, flywheel_header_dict):
                 'An exception was raised when parsing %s', path, exc_info=True
             )
             continue
+    warn_str = (
+        "Could not find file that matches Flywheel header on DICOM tags: "
+        f"{str(instance_tag_list)}"
+    )
+    log.warning(warn_str)
     return None
 
 
