@@ -226,9 +226,8 @@ def _create_archive(content_dir, arcname, file_list, zipfilepath=None):
     if not zipfilepath:
         zipfilepath = content_dir + '.zip'
     with zipfile.ZipFile(zipfilepath, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-        zf.write(content_dir, arcname)
         for fn in file_list:
-            zf.write(os.path.join(content_dir, fn), os.path.join(os.path.basename(arcname), fn))
+            zf.write(os.path.join(content_dir, fn), fn)
     return zipfilepath
 
 
