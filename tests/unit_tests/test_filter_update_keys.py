@@ -11,3 +11,14 @@ def test_skip_df_logic_for_list_of_1():
 def test_return_df_if_dict_list_empty():
     result = get_dicom_df([], [])
     assert isinstance(result, pd.DataFrame)
+
+
+def test_filter_SQ_and_OF():
+    update_keys = [
+        'VectorGridData',
+        'SeriesDescription',
+        'PointCoordinatesData',
+        'HistogramSequence'
+    ]
+    result = filter_update_keys(update_keys, ['does_not_exist.dcm'])
+    assert result == ['SeriesDescription']

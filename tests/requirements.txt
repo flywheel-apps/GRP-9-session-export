@@ -1,4 +1,4 @@
-pydicom~=1.4.2
+pydicom~=2.0.0
 pytest
 pytest-cov
 flywheel-sdk~=11.0.0
