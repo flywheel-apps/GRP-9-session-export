@@ -1,26 +1,19 @@
 import pytest
 
-from util import ensure_filename_safety
+from util import get_sanitized_filename
 
 
 def test_preserve_alpha():
-    assert ensure_filename_safety('abcdefghijklmnopqrstuvwxyz') == 'abcdefghijklmnopqrstuvwxyz'
-    assert ensure_filename_safety('ABCDEFGHIJKLMNOPQRSTUVWXYZ') == 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    assert get_sanitized_filename('abcdefghijklmnopqrstuvwxyz') == 'abcdefghijklmnopqrstuvwxyz'
+    assert get_sanitized_filename('ABCDEFGHIJKLMNOPQRSTUVWXYZ') == 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     
 def test_preserve_numeric():
-    assert ensure_filename_safety('01234567890') == '01234567890'
+    assert get_sanitized_filename('01234567890') == '01234567890'
 
 def test_preserve_special():
-    assert ensure_filename_safety('._-') == '._-'
+    assert get_sanitized_filename('._-') == '._-'
 
 def test_remove_special():
-    assert ensure_filename_safety(r"`~!@#$%^&*()=+,<>/?;:'[{]}\|") == ''
-    assert ensure_filename_safety('"') == ''
+    assert get_sanitized_filename("_a*b:c<d>e%f/(g)h+i_0.txt") == '_abcde%f(g)h+i_0.txt'
+    assert get_sanitized_filename('fi:l*e/p"a?t>h|.t<xt') == 'filepath.txt'
 
-def test_remove_space():
-    assert ensure_filename_safety('abc 123 DEF') == 'abc123DEF'
-    
-def test_remove_special_preserve_alphanumeric():
-    assert ensure_filename_safety('a_1_!_B@2-c3#.4$xyz') == 'a_1__B2-c3.4xyz'
-    assert ensure_filename_safety('&a_*1__(B2-)c3=.+4xyz?') == 'a_1__B2-c3.4xyz'
-    assert ensure_filename_safety(r"/a\_*/1\_ _/B2-\ c3=. '4xyz ]") == 'a_1__B2-c3.4xyz'

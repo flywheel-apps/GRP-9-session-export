@@ -5,3 +5,4 @@ git+https://github.com/pydicom/pydicom.git@9561c5d40ec96076c974b5987767dc7b78c50
 pytz~=2019.3
 tzlocal~=2.0.0
 backoff~=1.10.0
+pathvalidate~=2.3.0
