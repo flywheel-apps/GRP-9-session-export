@@ -173,6 +173,10 @@ def compare_dicom_headers(local_dicom_header, flywheel_dicom_header):
                 log_message += f'{key} will not be inserted into the dicom file(s)'
                 headers_match = False
                 log.warning(log_message)
+            elif vr == 'OF':
+                log_message = 'Other Float (OF) DICOM Tags are not modified by this gear\n'
+                log_message += f'{key} will not be inserted into the dicom file(s)'
+                log.warning(log_message)
             else:
                 # Check if the tags are equal
                 if local_dicom_header[key] != flywheel_dicom_header[key]:
@@ -493,7 +497,7 @@ def filter_update_keys(update_keys, dicom_path_list, force=False):
     filtered_keys = list()
     for key in update_keys:
         if DicomDictionary.get(tag_for_keyword(key)):
-            if DicomDictionary.get(tag_for_keyword(key))[0] != 'SQ':
+            if DicomDictionary.get(tag_for_keyword(key))[0] not in ['SQ', 'OF']:
                 filtered_keys.append(key)
     # If there's only one file, we already know each tag only has one unique val
     if len(dicom_path_list) > 1:
