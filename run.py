@@ -20,7 +20,7 @@ import pydicom
 
 from dicom_metadata import compare_dicom_headers, dicom_header_extract,\
     fix_type_based_on_dicom_vm, filter_update_keys
-from util import ensure_filename_safety, quote_numeric_string
+from util import get_sanitized_filename, quote_numeric_string
 
 logging.basicConfig()
 log = logging.getLogger('[GRP 9]:')
@@ -92,7 +92,7 @@ def _copy_files_from_session(fw, from_session, to_session):
         
         try:
             
-            download_file = os.path.join('/tmp', session_file.name)
+            download_file = os.path.join('/tmp', get_sanitized_filename(session_file.name))
             log.debug(f"\tdownloading file {session_file.name} to {download_file}")
             from_session.download_file(session_file.name, download_file)
             log.debug("\tcomplete")
@@ -290,11 +290,11 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
     # Download the dicom archive
 
 
-    dicom_file_path = os.path.join(tmp_dir, dicom_file.name)
+    dicom_file_path = os.path.join(tmp_dir, get_sanitized_filename(dicom_file.name))
     dicom_file.download(dicom_file_path)
     
     dicom_path_list = _retrieve_path_list(dicom_file_path)
-    
+
 
     # This is the header from Flywheel, which may have been modified
     if 'header' in dicom_file.info:
@@ -533,7 +533,7 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
             if f.type == 'dicom':
                 upload_file_path = _export_dicom(f, temp_dir, acquisition, session, subject, project, config)
             else:
-                upload_file_path = os.path.join(temp_dir, f.name)
+                upload_file_path = os.path.join(temp_dir, get_sanitized_filename(f.name))
                 f.download(upload_file_path)
     
             # Upload the file to the export_acquisition
@@ -921,7 +921,7 @@ def main(context):
         # Generate export log
         
         file_name = '{}-{}_export_log.csv'.format(subject.code, session.label)
-        safe_file_name = ensure_filename_safety(file_name)
+        safe_file_name = get_sanitized_filename(file_name)
         
         export_log = os.path.join(context.output_dir, safe_file_name)
         log.info('Generating export log: {}'.format(export_log))

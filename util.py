@@ -1,6 +1,8 @@
 import logging
 import re
 
+from pathvalidate import sanitize_filename
+
 
 def quote_numeric_string(input_str):
     """
@@ -24,7 +26,7 @@ def quote_numeric_string(input_str):
     return output_str
 
 
-def ensure_filename_safety(filename):
+def get_sanitized_filename(filename):
     """A function for removing characters that are not alphanumeric, '.', '-', or '_' from an input string.
     Args:
         filename (str): an input string
@@ -37,8 +39,8 @@ def ensure_filename_safety(filename):
     except NameError:
         log = logging.getLogger(__name__)
         
-    safe_filename = re.sub(r'[^A-Za-z0-9\-\_\.]+', '', filename)
-    if filename != safe_filename:
-        log.info(f'Renaming {filename} to {safe_filename}')
+    sanitized_filename = sanitize_filename(filename)
+    if filename != sanitized_filename:
+        log.info(f'Renaming {filename} to {sanitized_filename}')
 
-    return safe_filename
+    return sanitized_filename
