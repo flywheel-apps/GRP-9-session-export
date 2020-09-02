@@ -28,8 +28,9 @@ log.setLevel(logging.INFO)
 
 
 def false_if_exc_is_timeout(exception):
-    if exception.status in [504, 502, 500]:
-        return False
+    if hasattr(exception, "status"):
+        if exception.status in [504, 502, 500]:
+            return False
     return True
 
 
@@ -98,11 +99,9 @@ def _copy_files_from_session(fw, from_session, to_session):
             log.debug("\tcomplete")
     
             log.debug("\tuploading file to new session")
-            
-            to_session.upload_file(download_file)
-            to_session = to_session.reload()
-            new_file = to_session.get_file(name=session_file.name)
-            _update_file_metadata(fw, session_file, new_file)
+            exported_file = upload_file_with_metadata(fw, session_file, to_session, download_file)
+            if exported_file is None:
+                raise RuntimeError(f"Failed to export file {os.path.basename(download_file)} to {to_session.label}")
             
             log.debug("\tcomplete")
     
@@ -146,7 +145,6 @@ def _update_file_metadata(fw, orig_f, new_f):
     if orig_f.info:
         log.debug('Updating info for %s' % (new_f.name))
         new_f.update_info(orig_f.info)
-    
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
@@ -450,6 +448,7 @@ def validate_classification(fw, f_modality, f_classification, f_name):
         f_modality (str): file's instrument type, e.g. 'MR', 'CT', 'PT'
         f_classification ({str: [str, ...]}): key ('Features', 'Intent', or 'Measurement')
             values list (e.g. 'EPI', 'Calibration', 'T1')
+        f_name (str): the name that will be used for file upload
 
     Returns:
         valid_for_modality (bool): True if all values are valid for modality's
@@ -504,6 +503,152 @@ def validate_classification(fw, f_modality, f_classification, f_name):
     return valid_for_modality
 
 
+def get_file_modality(file_object, export_file_name):
+    """
+    Parse file modality from file_object
+    Args:
+        file_object (flywheel.FileEntry): the flywheel file from which to parse
+            modality
+        export_file_name (str): the name that will be used for file upload
+
+    Returns:
+        str or None: the parsed modality
+    """
+    modality = None
+    file_modality = file_object.get("modality")
+    if isinstance(file_modality, str) and file_modality != "":
+        modality = file_modality
+    if not file_modality and export_file_name.endswith('mriqc.qa.html'):
+        # Special case - mriqc output files do not have modality set, so
+        # we must set the modality prior to the classification to avoid errors.
+        modality = "MR"
+    if modality:
+        log.debug('%s modality will be set to %s' % (export_file_name, modality))
+    else:
+        log.debug('%s does not have a modality' % export_file_name)
+    return modality
+
+
+def get_file_classification(fw_client, file_object, file_modality, export_file_name):
+    """
+    Parse and validate the classification from file_object
+    Args:
+        fw_client (flywheel.Client): an instance of the flywheel client
+        file_object (flywheel.FileEntry): the flywheel file from which to parse
+            classification
+        file_modality (str): modality that has been parsed with get_file_modality
+        export_file_name (str): the name that will be used for file upload
+
+    Returns:
+        dict or None: the parsed classification
+
+    """
+    file_classification = file_object.get("classification", {})
+    if isinstance(file_classification, dict):
+        file_classification = remove_empty_lists_from_dict(file_classification)
+    else:
+        file_classification = None
+    if file_classification:
+
+        if validate_classification(fw_client, file_modality, file_classification, export_file_name):
+
+            log.debug('File %s classification will be set to %s' % (export_file_name, file_classification))
+
+        else:
+            log.error(
+                'Classification %s is invalid. Classification will not be set for file %s' % (
+                    file_classification,
+                    export_file_name
+                )
+            )
+            file_classification = None
+    else:
+        log.debug('File %s has no classification', export_file_name)
+    return file_classification
+
+
+def format_file_metadata_upload_str(fw_client, file_object, export_file_name):
+    """
+    Parse and format the metadata string to be provided at upload for file_object
+
+    Args:
+        fw_client (flywheel.Client): an instance of the flywheel client
+        file_object (flywheel.FileEntry): the flywheel file from which to parse
+            metadata
+        export_file_name (str): the name that will be used for file upload
+
+    Returns:
+        str: the metadata string to use at upload
+    """
+    metadata_str = "{}"
+    file_type = file_object.get("type")
+    file_info = file_object.get("info")
+    # Parse file modality
+    file_modality = get_file_modality(file_object, export_file_name)
+    # Parse and validate file classification
+    file_classification = get_file_classification(fw_client, file_object, file_modality, export_file_name)
+    # Prepare metadata dictionary
+    metadata_dict = dict()
+    if file_modality:
+        metadata_dict["modality"] = file_modality
+    if file_classification:
+        metadata_dict["classification"] = file_classification
+    if file_type:
+        metadata_dict["type"] = file_type
+    if file_info:
+        metadata_dict["info"] = file_info
+    if metadata_dict:
+        metadata_str = json.dumps(metadata_dict)
+    return metadata_str
+
+
+@backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
+                      max_time=300, giveup=false_if_exc_is_timeout)
+def upload_file_with_metadata(fw_client, origin_file, destination_container, local_file_path):
+    """
+    Upload the file at local_file_path to destination_container with the metadata from origin_file
+    Args:
+        fw_client (flywheel.Client): an instance of the flywheel client
+        origin_file (flywheel.FileEntry): the fw file that is located at local_file_path
+        destination_container: the container to which to upload the file at local_file_path
+        local_file_path (str): path to the file to upload
+
+    Returns:
+        flywheel.FileEntry or None: the uploaded file object if upload was successful
+    """
+    export_file_name = os.path.basename(local_file_path)
+    # Parse file metadata
+    log.debug("Parsing metadata for file %s", export_file_name)
+    metadata_str = format_file_metadata_upload_str(fw_client, origin_file, export_file_name)
+    # Upload the file to the export_acquisition
+    log.debug("Uploading %s to %s" % (export_file_name, destination_container.label))
+    # Add logic around retrying failed uploads
+    max_attempts = 5
+    attempt = 0
+    exported_file = None
+    while attempt < max_attempts:
+        attempt += 1
+        fw_client.upload_file_to_container(destination_container.id, local_file_path, metadata=metadata_str)
+        # Confirm upload - give as long as 10 seconds to wait for file to appear
+        start_time = time.time()
+        time_passed = 0
+        while time_passed < 10:
+            time_passed = time.time() - start_time
+            destination_container = destination_container.reload()
+            exported_file = destination_container.get_file(export_file_name)
+
+            if exported_file:
+                break
+
+        if exported_file:
+            log.info('Successfully exported: {}'.format(export_file_name))
+            break
+        elif attempt < 5:
+            log.warning('Upload failed for {} - retrying...'.format(export_file_name))
+
+    return exported_file
+
+
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
                       max_time=300, giveup=false_if_exc_is_timeout)
 def _export_files(fw, acquisition, export_acquisition, session, subject, project, config):
@@ -535,51 +680,12 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
             else:
                 upload_file_path = os.path.join(temp_dir, get_sanitized_filename(f.name))
                 f.download(upload_file_path)
-    
-            # Upload the file to the export_acquisition
-            log.debug("Uploading %s to %s" % (f.name, export_acquisition.label))
-    
-            # Add logic around retrying failed uploads
-            max_attempts = 5
-            attempt = 0
-            while attempt < max_attempts:
-                attempt +=1
-                s = export_acquisition.upload_file(upload_file_path)
-                log.info('Upload status = {}'.format(s))
-                export_acquisition = fw.get_acquisition(export_acquisition.id)
-                file_names = [ x.name for x in export_acquisition.files ]
-                log.debug(file_names)
-                if os.path.basename(upload_file_path) not in file_names:
-                    log.warning('Upload failed for {} - retrying...'.format(os.path.basename(upload_file_path)))
-                else:
-                    log.info('Successfully exported: {}'.format(os.path.basename(upload_file_path)))
-                    break
-    
-    
-            # Update file metadata
-            if f.modality:
-                log.debug('Updating modality to %s for %s' % (f.modality, f.name))
-                export_acquisition.update_file(f.name, modality=f.modality)
-            if not f.modality and f.name.endswith('mriqc.qa.html'):
-                # Special case - mriqc output files do not have modality set, so
-                # we must set the modality prior to the classification to avoid errors.
-                export_acquisition.update_file(f.name, modality='MR')
-            if f.type:
-                log.debug('Updating type to %s for %s' % (f.type, f.name))
-                export_acquisition.update_file(f.name, type=f.type)
-            if f.classification:
-                classification_dict = remove_empty_lists_from_dict(f.classification)
-                if validate_classification(fw, f.modality, classification_dict, f.name):
+            export_file_name = os.path.basename(upload_file_path)
 
-                    log.debug('Updating classification to %s for %s' % (classification_dict, f.name))
-                    export_acquisition.update_file_classification(f.name, classification_dict)
-                else:
-                    log.error('Not updating classification to %s for %s' % (f.classification, f.name))
-            if f.info:
-                log.debug('Updating info for %s' % (f.name))
-                export_acquisition.update_file_info(f.name, f.info)
-    
-            export_acquisition.reload()
+            # Upload the file to the export_acquisition
+            exported_file = upload_file_with_metadata(fw, f, export_acquisition, upload_file_path)
+            if exported_file is None:
+                raise RuntimeError(f"Failed to export file {export_file_name} to {export_acquisition.label}")
 
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
