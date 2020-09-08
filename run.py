@@ -462,12 +462,15 @@ def validate_classification(fw, f_modality, f_classification, f_name):
     if class_dict_invalid(f_classification):
         return False
     if not f_modality:
-        log_msg = (
-            f'file {f_name} does not have a modality. It will be assumed that'
-            f' classification {f_classification} is valid'
-        )
-        log.info(log_msg)
-        return valid_for_modality
+        # files without modality can only have custom classifications
+        if list(f_classification.keys()) != ["Custom"]:
+            log_msg = (
+                f'File {f_name} does not have a modality.'
+                f'Classification {f_classification} invalid for files without '
+                'a modality, as it has non-Custom classifications.'
+            )
+            log.error(log_msg)
+            valid_for_modality = False
     try:
         classification_schema = fw.get_modality(f_modality)
 

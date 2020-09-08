@@ -194,7 +194,9 @@ def test_no_modality_with_classification():
     classification = {'Custom': ['TEST_CUSTOM']}
     return_value = run.validate_classification(fw, None, classification, 'filename')
     assert return_value is True
-
+    classification = {'Custom': ['TEST_CUSTOM'], 'Features': ['FLAIR']}
+    return_value = run.validate_classification(fw, None, classification, 'filename')
+    assert return_value is False
 
 def test_empty_classifications():
     fw = GearContext().client
@@ -209,7 +211,7 @@ def test_empty_classifications():
 def test_classification_with_empty_and_populated_lists():
     fw = GearContext().client
     classification = {'Intent': ['Structural'], 'Features': ['FLAIR'], 'Custom': []}
-    return_value = run.validate_classification(fw, None, classification, 'filename')
+    return_value = run.validate_classification(fw, "MR", classification, 'filename')
     assert return_value is True
 
 
