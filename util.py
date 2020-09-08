@@ -28,6 +28,7 @@ def quote_numeric_string(input_str):
 
 def get_sanitized_filename(filename):
     """A function for removing characters that are not alphanumeric, '.', '-', or '_' from an input string.
+        asterix following "t2" + optional space/underscore  will be replaced with "star"
     Args:
         filename (str): an input string
     Returns:
@@ -38,7 +39,7 @@ def get_sanitized_filename(filename):
         log
     except NameError:
         log = logging.getLogger(__name__)
-        
+    filename = re.sub(r"(t2 ?_?)\*", r"\1star", str(filename), flags=re.IGNORECASE)
     sanitized_filename = sanitize_filename(filename)
     if filename != sanitized_filename:
         log.info(f'Renaming {filename} to {sanitized_filename}')

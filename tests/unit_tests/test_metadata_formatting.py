@@ -1,12 +1,12 @@
-
 from unittest.mock import patch, MagicMock
 import pytest
 import logging
-
+import json
 
 import flywheel
 
 import run
+
 
 mr_modality = {'classification': {'Features': ['Quantitative',
                                                'Multi-Shell',
@@ -113,6 +113,7 @@ class Client:
         else:
             return {'id': string, 'classification': None}
 
+
 class GearContext:
     def __init__(self):
         self.client = Client()
@@ -120,103 +121,38 @@ class GearContext:
         self.destination = {"id": "dontneednostinkingdestination"}
 
 
-def test_validate_classification_basic_function_works(caplog):
-
-    caplog.set_level(logging.DEBUG)
-
+def test_get_file_classification():
     fw = GearContext().client
-
     classification = {'Measurement': ['B0']}
-    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
-    assert return_value == True
+    test_file = flywheel.FileEntry(classification=classification, modality="MR")
+    result = run.get_file_classification(fw, test_file, "MR", "test_name")
+    assert result == classification
+    test_file = flywheel.FileEntry(modality="MR")
+    result = run.get_file_classification(fw, test_file, "MR", "test_name")
+    assert result is None
+    classification = {'Measurement': ['Bananas']}
+    test_file = flywheel.FileEntry(classification=classification)
+    result = run.get_file_classification(fw, test_file, "MR", "test_name")
+    assert result is None
 
-    classification = {'Measurement': ['FLAIR']}
-    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
-    assert return_value == False
-    assert 'filename, modality "MR", "FLAIR" is not valid for "Measurement"' in caplog.messages[0]
+
+def test_get_file_modality():
+    test_file = flywheel.FileEntry(modality="MR")
+    result = run.get_file_modality(test_file, "test.dcm")
+    assert result == "MR"
+    test_file = flywheel.FileEntry()
+    result = run.get_file_modality(test_file, "test.dcm")
+    assert result is None
+    result = run.get_file_modality(test_file, "test.dcm.mriqc.qa.html")
+    assert result == "MR"
 
 
-def test_validate_classification_multiple_works():
-
+def test_format_file_metadata_upload_str():
     fw = GearContext().client
-
-    classification = {'Features': ['MPRAGE', '3D']}
-    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
-    assert return_value == True
-
-    classification = {'Features': ['Derived', 'fail']}
-    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
-    assert return_value == False
-
-
-def test_validate_classification_bad_class_key_fail(caplog):
-
-    caplog.set_level(logging.DEBUG)
-
-    fw = GearContext().client
-
-    classification = {'NotToBeFound': ['FLAIR']}
-    return_value = run.validate_classification(fw, 'MR', classification, 'filename')
-    assert return_value == False
-    assert 'modality "MR", "NotToBeFound" is not in classification schema' in caplog.messages[0]
-
-
-def test_validate_classification_bad_modality_fail(caplog):
-
-    caplog.set_level(logging.DEBUG)
-
-    fw = GearContext().client
-
-    with patch.object(fw,'get_modality') as mock:
-        mock.side_effect = flywheel.ApiException("oof ApiException", "doc", None)
-
-        classification = {'Features': ['MPRAGE', '3D']}
-        return_value = run.validate_classification(fw, 'CT', classification, 'filename')
-
-        assert return_value == False
-        assert "oof ApiException" in caplog.messages[0]
-
-
-    # _export_files(fw, acquisition, export_acquisition, session, subject, project, config):
-
-def test_validate_modality_without_schema():
-    fw = GearContext().client
-    classification = {'Custom': ['TEST_CUSTOM']}
-    return_value = run.validate_classification(fw, 'FW', classification, 'filename')
-    assert return_value is True
-    classification = {'Custom': ['TEST_CUSTOM'], 'Features': 'bad'}
-    return_value = run.validate_classification(fw, 'FW', classification, 'filename')
-    assert return_value is False
-
-
-def test_no_modality_with_classification():
-    fw = GearContext().client
-    classification = {'Custom': ['TEST_CUSTOM']}
-    return_value = run.validate_classification(fw, None, classification, 'filename')
-    assert return_value is True
-    classification = {'Custom': ['TEST_CUSTOM'], 'Features': ['FLAIR']}
-    return_value = run.validate_classification(fw, None, classification, 'filename')
-    assert return_value is False
-
-def test_empty_classifications():
-    fw = GearContext().client
-    classification = {}
-    return_value = run.validate_classification(fw, None, classification, 'filename')
-    assert return_value is False
-    classification = {'Intent': [], 'Measurement': []}
-    return_value = run.validate_classification(fw, None, classification, 'filename')
-    assert return_value is False
-
-
-def test_classification_with_empty_and_populated_lists():
-    fw = GearContext().client
-    classification = {'Intent': ['Structural'], 'Features': ['FLAIR'], 'Custom': []}
-    return_value = run.validate_classification(fw, "MR", classification, 'filename')
-    assert return_value is True
-
-
-def test_remove_empty_lists_from_dict():
-    classification = {'Intent': ['Structural'], 'Features': ['FLAIR'], 'Custom': []}
-    expected_dict = {'Intent': ['Structural'], 'Features': ['FLAIR']}
-    return_value = run.remove_empty_lists_from_dict(classification)
-    assert return_value == expected_dict
+    test_file = flywheel.FileEntry()
+    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt")
+    assert result == "{}"
+    test_metadata = {"modality": "MR", "classification": {'Measurement': ['B0']}, "type": "dicom", "info": {"spam": "eggs"}}
+    test_file = flywheel.FileEntry(**test_metadata)
+    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt")
+    assert result == json.dumps(test_metadata)
