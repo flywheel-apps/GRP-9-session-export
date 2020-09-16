@@ -400,6 +400,16 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
                         log.warning('Could not modify DICOM attribute: {}!'.format(key))
                 else:
                     log.warning('{} key is empty in Flywheel [{}={}]. DICOM header will remain [{}={}]'.format(key, key, flywheel_dicom_header.get(key), key, dicom.get(key)))
+            else:
+                if pydicom.datadict.tag_for_keyword(key):  # checking keyword is valid
+                    log.info(
+                        '{} data element not present in DICOM header. Creating it.'.format(
+                            key))
+                    setattr(dicom, key, flywheel_dicom_header.get(key))
+                else:
+                    log.warning(
+                        'Unknown DICOM keyword: {}. Date element will not be created.'.format(
+                            key))
         log.debug('Saving {}'.format(os.path.basename(dfp)))
         try:
             dicom.save_as(dfp)
