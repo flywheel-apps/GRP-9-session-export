@@ -408,7 +408,7 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
                     setattr(dicom, key, flywheel_dicom_header.get(key))
                 else:
                     log.warning(
-                        'Unknown DICOM keyword: {}. Date element will not be created.'.format(
+                        'Unknown DICOM keyword: {}. Data element will not be created.'.format(
                             key))
         log.debug('Saving {}'.format(os.path.basename(dfp)))
         try:

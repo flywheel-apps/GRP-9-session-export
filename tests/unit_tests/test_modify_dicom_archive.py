@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import zipfile
+import pydicom
 
 from run import _modify_dicom_archive, _retrieve_path_list
 from dicom_metadata import get_dicom_df
@@ -64,3 +65,30 @@ def test_do_not_modify_varying_key():
             output_file_list = [str(path) for path in output_file_list if path.is_file()]
             dcm_df = get_dicom_df(output_file_list, specific_tag_list=update_keys)
             assert all([x in dcm_df['InstanceNumber'] for x in range(9)])
+
+
+def test_create_data_element_if_not_present():
+    archive_path = DATA_ROOT / 'test_dicom.zip'
+    dcm_file_list_tup = _retrieve_path_list(archive_path)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with zipfile.ZipFile(archive_path) as ZF:
+            ZF.extractall(tmp_dir)
+        dcm = pydicom.dcmread(os.path.join(tmp_dir, 'MR_small_1.dcm'))
+        assert 'ContainerDescription' not in dcm
+
+    update_keys = ['ContainerDescription']
+    flywheel_dicom_header = {'ContainerDescription': 'TEST'}
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        arc_copy_path = os.path.join(tmp_dir, os.path.basename(archive_path))
+        shutil.copyfile(archive_path, arc_copy_path)
+        output_path = _modify_dicom_archive(
+            arc_copy_path,
+            update_keys,
+            flywheel_dicom_header,
+            dcm_file_list_tup,
+            tmp_dir
+        )
+        with zipfile.ZipFile(output_path) as ZF:
+            ZF.extractall(tmp_dir)
+        dcm = pydicom.dcmread(os.path.join(tmp_dir, 'MR_small_1.dcm'))
+        assert dcm.ContainerDescription == 'TEST'
