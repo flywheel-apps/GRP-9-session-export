@@ -28,8 +28,9 @@ def test_character_set_callback():
 
 def test_can_update_dicom():
     dcm_path = get_testdata_files("MR_small.dcm")[0]
-    assert can_update_dicom(dcm_path, {"PatientID": "Flywheel"})
-    assert can_update_dicom(dcm_path, {"PatientID": 2}) is False
+    fw_config_kwargs = get_dicom_save_config_kwargs(dcm_path)
+    assert can_update_dicom(dcm_path, {"PatientID": "Flywheel"}, fw_config_kwargs)
+    assert can_update_dicom(dcm_path, {"PatientID": 2}, fw_config_kwargs) is False
 
 
 def test_edit_dicom():
