@@ -21,6 +21,8 @@ import pydicom
 from dicom_metadata import compare_dicom_headers, dicom_header_extract,\
     fix_type_based_on_dicom_vm, filter_update_keys
 from util import get_sanitized_filename, quote_numeric_string
+from dicom_edit import edit_dicom
+
 
 logging.basicConfig()
 log = logging.getLogger('[GRP 9]:')
@@ -318,7 +320,7 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
     update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
-    
+
     # If mapping to flywheel then we do that here
     if config['map_flywheel_to_dicom']:
 
@@ -349,12 +351,10 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
         return dicom_file_path
 
     # Iterate through the DICOM files and update the values according to the flywheel_dicom_header
-    log.info('The following keys will be updated: {}'.format(update_keys))
     upload_file_path = _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, 
                                              dicom_path_list, tmp_dir)
 
-
-    return upload_file_path
+    return upload_file_path, flywheel_dicom_header
 
 
 def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, dicom_file_list, tmp_dir):
@@ -373,6 +373,8 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
         dicom_base_folder, base = os.path.split(dicom_file_path)
     file_path_list = [os.path.join(dicom_base_folder, fname) for fname in dicom_files]
     update_keys = filter_update_keys(update_keys, file_path_list, force=True)
+    update_dict = {key: flywheel_dicom_header.get(key) for key in update_keys if key in flywheel_dicom_header}
+    log.info('Attempting updates for the following keys: {}'.format(update_keys))
     # Remove the zipfile
     # Still explicitly removing this because we later create a zip archive of the same name
     if os.path.exists(dicom_file_path) and zipfile.is_zipfile(dicom_file_path):
@@ -380,42 +382,15 @@ def _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, d
         os.remove(dicom_file_path)
 
     log.info('Updating {} keys in {} dicom files...'.format(len(update_keys), len(dicom_files)))
-    # for df in sorted(dicom_files):
+    error_files_list = list()
     for df in dicom_files:
         dfp = os.path.join(dicom_base_folder, df)
-        log.debug('Reading {}'.format(dfp))
-        try:
-            dicom = pydicom.read_file(dfp, force=False)
-        except:
-            log.warning('{} could not be parsed! Attempting to force pydicom to read the file!'.format(df))
-            dicom = pydicom.read_file(dfp, force=True)
-        log.debug('Modifying: {}'.format(os.path.basename(dfp)))
-        for key in update_keys:
-            if key in dicom:
-                if flywheel_dicom_header.get(key):
-                    try:
-                        log.debug('key={}, value={}'.format(key, flywheel_dicom_header.get(key)))
-                        setattr(dicom, key, flywheel_dicom_header.get(key))
-                    except:
-                        log.warning('Could not modify DICOM attribute: {}!'.format(key))
-                else:
-                    log.warning('{} key is empty in Flywheel [{}={}]. DICOM header will remain [{}={}]'.format(key, key, flywheel_dicom_header.get(key), key, dicom.get(key)))
-            else:
-                if pydicom.datadict.tag_for_keyword(key):  # checking keyword is valid
-                    log.info(
-                        '{} data element not present in DICOM header. Creating it.'.format(
-                            key))
-                    setattr(dicom, key, flywheel_dicom_header.get(key))
-                else:
-                    log.warning(
-                        'Unknown DICOM keyword: {}. Data element will not be created.'.format(
-                            key))
-        log.debug('Saving {}'.format(os.path.basename(dfp)))
-        try:
-            dicom.save_as(dfp)
-        except Exception as err:
-            log.error('PYDICOM encountered an error when attempting to save {}!: \n{}'.format(dfp, err))
-            raise
+        edited_path = edit_dicom(dfp, update_dict)
+        if edited_path is None:
+            error_files_list.append(dfp)
+
+    if error_files_list:
+        raise RuntimeError(f"Failed to edit {dicom_file_path} files: {error_files_list}")
 
 
     # Package up the archive
@@ -580,7 +555,7 @@ def get_file_classification(fw_client, file_object, file_modality, export_file_n
     return file_classification
 
 
-def format_file_metadata_upload_str(fw_client, file_object, export_file_name):
+def format_file_metadata_upload_str(fw_client, file_object, export_file_name, new_dicom_header):
     """
     Parse and format the metadata string to be provided at upload for file_object
 
@@ -589,6 +564,8 @@ def format_file_metadata_upload_str(fw_client, file_object, export_file_name):
         file_object (flywheel.FileEntry): the flywheel file from which to parse
             metadata
         export_file_name (str): the name that will be used for file upload
+        new_dicom_header (dict): dictionary returned by _export_dicom which may
+            have updates after processing the dicom file
 
     Returns:
         str: the metadata string to use at upload
@@ -596,6 +573,11 @@ def format_file_metadata_upload_str(fw_client, file_object, export_file_name):
     metadata_str = "{}"
     file_type = file_object.get("type")
     file_info = file_object.get("info")
+    current_dicom_header = file_info.get("header", {}).get("dicom", {})
+    if current_dicom_header != new_dicom_header:
+        if not isinstance(file_info.get("header"), dict):
+            file_info["header"] = dict()
+        file_info["header"]["dicom"] = new_dicom_header
     # Parse file modality
     file_modality = get_file_modality(file_object, export_file_name)
     # Parse and validate file classification
@@ -689,14 +671,14 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
         with tempfile.TemporaryDirectory() as temp_dir:
             
             if f.type == 'dicom':
-                upload_file_path = _export_dicom(f, temp_dir, acquisition, session, subject, project, config)
+                upload_file_path, flywheel_dicom_header = _export_dicom(f, temp_dir, acquisition, session, subject, project, config)
             else:
                 upload_file_path = os.path.join(temp_dir, get_sanitized_filename(f.name))
                 f.download(upload_file_path)
             export_file_name = os.path.basename(upload_file_path)
 
             # Upload the file to the export_acquisition
-            exported_file = upload_file_with_metadata(fw, f, export_acquisition, upload_file_path)
+            exported_file = upload_file_with_metadata(fw, f, export_acquisition, upload_file_path, flywheel_dicom_header)
             if exported_file is None:
                 raise RuntimeError(f"Failed to export file {export_file_name} to {export_acquisition.label}")
 
