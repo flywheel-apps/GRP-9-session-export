@@ -150,9 +150,10 @@ def test_get_file_modality():
 def test_format_file_metadata_upload_str():
     fw = GearContext().client
     test_file = flywheel.FileEntry()
-    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt")
+    setattr(test_file, "info", dict())
+    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt", {})
     assert result == "{}"
     test_metadata = {"modality": "MR", "classification": {'Measurement': ['B0']}, "type": "dicom", "info": {"spam": "eggs"}}
     test_file = flywheel.FileEntry(**test_metadata)
-    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt")
+    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt", {})
     assert result == json.dumps(test_metadata)
