@@ -13,6 +13,7 @@ COPY manifest.json \
      run.py \
      util.py \
      dicom_metadata.py \
+     dicom_edit.py \
      Dockerfile \
      ./
 

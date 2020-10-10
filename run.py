@@ -1062,7 +1062,7 @@ def get_patientsex_from_subject(subject):
 
 if __name__ == '__main__':
     # with flywheel.GearContext() as context:
-    with flywheel.GearContext(gear_path="/Users/nicolaspannetier/Downloads/session-export-1.4.2_5f80e8fe42ee92569c35f130") as context:
+    with flywheel.GearContext() as context:
         if context.config.get('log_debug'):
             log.setLevel(logging.DEBUG)
         log.info('{}'.format(context.config))
