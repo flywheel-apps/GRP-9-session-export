@@ -311,12 +311,12 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
                 'Could not parse DICOM header from %s - file will not be modified prior to upload!',
                 dicom_file_path
             )
-            return dicom_file_path
+            return dicom_file_path, flywheel_dicom_header
     else:
         log.warning('WARNING: Flywheel DICOM does not have DICOM header at info.header.dicom!')
         if config['map_flywheel_to_dicom']:
             log.warning('WARNING! map_flywheel_to_dicom is True, however there is no DICOM header information in Flywheel. Please run.py GRP-3 (medatadata extraction) to read DICOM header data into Flywheel.')
-        return dicom_file_path
+        return dicom_file_path, {}
 
     # Check if headers match, if not then update local dicom files to match Flywheel Header
     update_keys = compare_dicom_headers(local_dicom_header, flywheel_dicom_header)
@@ -348,7 +348,7 @@ def _export_dicom(dicom_file, tmp_dir, acquisition, session, subject, project, c
     # If the list of update_keys is empty, then there's nothing to do with the DICOM archive,
     # thus we just return the dicom_file_path and move on with life.
     if not update_keys:
-        return dicom_file_path
+        return dicom_file_path, flywheel_dicom_header
 
     # Iterate through the DICOM files and update the values according to the flywheel_dicom_header
     upload_file_path = _modify_dicom_archive(dicom_file_path, update_keys, flywheel_dicom_header, 
@@ -599,7 +599,7 @@ def format_file_metadata_upload_str(fw_client, file_object, export_file_name, ne
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
                       max_time=300, giveup=false_if_exc_is_timeout)
-def upload_file_with_metadata(fw_client, origin_file, destination_container, local_file_path):
+def upload_file_with_metadata(fw_client, origin_file, destination_container, local_file_path, flywheel_dicom_header):
     """
     Upload the file at local_file_path to destination_container with the metadata from origin_file
     Args:
@@ -614,7 +614,7 @@ def upload_file_with_metadata(fw_client, origin_file, destination_container, loc
     export_file_name = os.path.basename(local_file_path)
     # Parse file metadata
     log.debug("Parsing metadata for file %s", export_file_name)
-    metadata_str = format_file_metadata_upload_str(fw_client, origin_file, export_file_name)
+    metadata_str = format_file_metadata_upload_str(fw_client, origin_file, export_file_name, flywheel_dicom_header)
     # Upload the file to the export_acquisition
     log.debug("Uploading %s to %s" % (export_file_name, destination_container.label))
     # Add logic around retrying failed uploads
@@ -1061,7 +1061,8 @@ def get_patientsex_from_subject(subject):
 
 
 if __name__ == '__main__':
-    with flywheel.GearContext() as context:
+    # with flywheel.GearContext() as context:
+    with flywheel.GearContext(gear_path="/Users/nicolaspannetier/Downloads/session-export-1.4.2_5f80e8fe42ee92569c35f130") as context:
         if context.config.get('log_debug'):
             log.setLevel(logging.DEBUG)
         log.info('{}'.format(context.config))

@@ -52,16 +52,17 @@ def can_update_dicom_tag(dcm_path, tag_keyword, tag_value, **fw_config_kwargs):
         # We could have decode problems with the current tag/value
         try:
             dcm_tag_value = dcm.get(tag_keyword)
-            log.info("%s is present in DICOM header with value %s", tag_keyword, str(dcm_tag_value))
+            log.debug("%s is present in DICOM header with value %s", tag_keyword, str(dcm_tag_value))
         except:
             log.warning("Could not read current %s value for %s", tag_keyword, dcm_path)
     else:
-        log.info("%s is not currently present in DICOM header")
+        log.debug("%s is not currently present in DICOM header")
 
-    log.info("Testing whether %s can be set as %s and saved for %s", tag_keyword, str(tag_value), dcm_path)
+    log.debug("Testing whether %s can be set as %s and saved for %s", tag_keyword, str(tag_value), dcm_path)
     try:
         setattr(dcm, tag_keyword, tag_value)
-        write_dcm_to_tempfile(dcm)
+        with fw_pydicom_config(**fw_config_kwargs):
+            write_dcm_to_tempfile(dcm)
         can_update_tag = True
     except:
         log.error("Exception raised when attempting to set %s as %s for %s", tag_keyword, str(tag_value), dcm_path, exc_info=True)
@@ -81,9 +82,7 @@ def can_set_dicom_tags(update_dict, dicom_path, **fw_config_kwargs):
         return True
 
 
-def can_update_dicom(dicom_path, update_dict):
-
-    fw_config_kwargs = get_dicom_save_config_kwargs(dicom_path)
+def can_update_dicom(dicom_path, update_dict, fw_config_kwargs):
     # Cannot save if a dictionary wasn't returned
     if fw_config_kwargs is None:
         return False
@@ -97,7 +96,7 @@ def edit_dicom(dicom_path, update_dict):
     if fw_config_kwargs is None:
         return None
     log.debug("Checking that %s can be updated...", str(update_dict.keys()))
-    if not can_update_dicom(dicom_path, update_dict):
+    if not can_update_dicom(dicom_path, update_dict, fw_config_kwargs):
         log.error("%s cannot be updated", dicom_path)
         return None
     with fw_pydicom_config(**fw_config_kwargs):
