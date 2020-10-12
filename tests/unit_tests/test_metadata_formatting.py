@@ -7,7 +7,6 @@ import flywheel
 
 import run
 
-
 mr_modality = {'classification': {'Features': ['Quantitative',
                                                'Multi-Shell',
                                                'Multi-Echo',
@@ -151,9 +150,15 @@ def test_format_file_metadata_upload_str():
     fw = GearContext().client
     test_file = flywheel.FileEntry()
     setattr(test_file, "info", dict())
-    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt", {})
+    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt")
     assert result == "{}"
-    test_metadata = {"modality": "MR", "classification": {'Measurement': ['B0']}, "type": "dicom", "info": {"spam": "eggs"}}
+    test_metadata = {"modality": "MR", "classification": {'Measurement': ['B0']}, "type": "dicom",
+                     "info": {"spam": "eggs"}}
     test_file = flywheel.FileEntry(**test_metadata)
-    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt", {})
+    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt")
     assert result == json.dumps(test_metadata)
+    fw_dicom_header = {"Modality": "MR", "PatientID": "Flywheel"}
+    exp_metadata = {"modality": "MR", "classification": {'Measurement': ['B0']}, "type": "dicom",
+                    "info": {"spam": "eggs", "header": {"dicom": fw_dicom_header}}}
+    result = run.format_file_metadata_upload_str(fw, test_file, "test.txt", fw_dicom_header)
+    assert result == json.dumps(exp_metadata)

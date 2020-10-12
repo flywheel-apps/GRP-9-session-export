@@ -555,7 +555,7 @@ def get_file_classification(fw_client, file_object, file_modality, export_file_n
     return file_classification
 
 
-def format_file_metadata_upload_str(fw_client, file_object, export_file_name, new_dicom_header):
+def format_file_metadata_upload_str(fw_client, file_object, export_file_name, new_dicom_header=None):
     """
     Parse and format the metadata string to be provided at upload for file_object
 
