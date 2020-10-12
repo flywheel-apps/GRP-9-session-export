@@ -573,11 +573,12 @@ def format_file_metadata_upload_str(fw_client, file_object, export_file_name, ne
     metadata_str = "{}"
     file_type = file_object.get("type")
     file_info = file_object.get("info")
-    current_dicom_header = file_info.get("header", {}).get("dicom", {})
-    if current_dicom_header != new_dicom_header:
-        if not isinstance(file_info.get("header"), dict):
-            file_info["header"] = dict()
-        file_info["header"]["dicom"] = new_dicom_header
+    if file_object.type == "dicom" and new_dicom_header is not None:
+        current_dicom_header = file_info.get("header", {}).get("dicom", {})
+        if current_dicom_header != new_dicom_header:
+            if not isinstance(file_info.get("header"), dict):
+                file_info["header"] = dict()
+            file_info["header"]["dicom"] = new_dicom_header
     # Parse file modality
     file_modality = get_file_modality(file_object, export_file_name)
     # Parse and validate file classification
@@ -599,7 +600,7 @@ def format_file_metadata_upload_str(fw_client, file_object, export_file_name, ne
 
 @backoff.on_exception(backoff.expo, flywheel.rest.ApiException,
                       max_time=300, giveup=false_if_exc_is_timeout)
-def upload_file_with_metadata(fw_client, origin_file, destination_container, local_file_path, flywheel_dicom_header):
+def upload_file_with_metadata(fw_client, origin_file, destination_container, local_file_path, flywheel_dicom_header=None):
     """
     Upload the file at local_file_path to destination_container with the metadata from origin_file
     Args:
@@ -607,6 +608,7 @@ def upload_file_with_metadata(fw_client, origin_file, destination_container, loc
         origin_file (flywheel.FileEntry): the fw file that is located at local_file_path
         destination_container: the container to which to upload the file at local_file_path
         local_file_path (str): path to the file to upload
+        flywheel_dicom_header (dict): dictionary representing the dicom header metadata
 
     Returns:
         flywheel.FileEntry or None: the uploaded file object if upload was successful
