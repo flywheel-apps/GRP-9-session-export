@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import re
 
@@ -45,3 +46,29 @@ def get_sanitized_filename(filename):
         log.info(f'Renaming {filename} to {sanitized_filename}')
 
     return sanitized_filename
+
+
+def hash_value(value, algorithm="sha256", output_format="hex", salt=None):
+    """Hash a string using the given algorithm and salt, and return in the requested output_format.
+
+    Arguments:
+        value (str): The value to hash
+        algorithm (str): The algorithm to use (default is sha256)
+        output_format (str): The output format, one of 'hex', 'dec', or None
+        salt (str): The optional salt string
+    """
+    hasher = hashlib.new(algorithm)
+    # Work in bytes
+    if salt:
+        hasher.update(salt.encode("utf-8"))
+    hasher.update(value.encode("utf-8"))
+    if output_format == "hex":
+        result = hasher.hexdigest()
+    elif output_format == "dec":
+        digest = hasher.digest()
+        result = ""
+        for atom in digest:
+            result += str(atom)
+    else:
+        result = hasher.digest
+    return result
