@@ -25,3 +25,10 @@ def test_t2_star():
     assert get_sanitized_filename("t2*.dicom.zip") == "t2star.dicom.zip"
     assert get_sanitized_filename("t2 *.dicom.zip") == "t2 star.dicom.zip"
     assert get_sanitized_filename("t2_*.dicom.zip") == "t2_star.dicom.zip"
+
+def test_preserve_carrot():
+    assert get_sanitized_filename("rabbits like a ^") == "rabbits like a ^"
+
+def test_preserve_most_printable():
+    # only these characters are removed: " * / : < > ?  \ |
+    assert get_sanitized_filename("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~") == "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!#$%&'()+,-.;=@[]^_`{}~"
