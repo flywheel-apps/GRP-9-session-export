@@ -671,7 +671,7 @@ def _export_files(fw, acquisition, export_acquisition, session, subject, project
                                             f.name))
         
         with tempfile.TemporaryDirectory() as temp_dir:
-            
+            flywheel_dicom_header = None
             if f.type == 'dicom':
                 upload_file_path, flywheel_dicom_header = _export_dicom(f, temp_dir, acquisition, session, subject, project, config)
             else:
