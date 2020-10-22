@@ -1,4 +1,5 @@
 import logging
+import sys
 
 log = logging.getLogger(__name__)
 # TODO capture run.py's main validation functionality with the enhancement of validating as
@@ -24,31 +25,36 @@ def validate_context(gc):
     """
     # Setup
     errors = []
-    fw = context.client
-    returns = [None] * 3
+    fw = gc.client
+    export_project, archive_project, destination = None, None, None
 
     #####
     # Lookup destination projects
+    # At this time no error would be thrown if neither export, or archive project is passed.
     if gc.config.get("export_project"):
         log.info("Looking up export_project")
-        returns[0] = get_project(fw, gc.config.get("export_project"), errors)
+        export_project = get_project(fw, gc.config.get("export_project"), errors)
 
     if gc.config.get("archive_project"):
-        returns[1] = get_project(fw, gc.config.get("archive_project"), errors)
+        archive_project = get_project(fw, gc.config.get("archive_project"), errors)
+
+    if export_project is None:
+        log.error("Export project needs to be specified")
+        sys.exit(1)
 
     #####
     # Check for projet rules
     if gc.config.get("check_gear_rules"):
-        validate_gear_rules(fw, returns[0], errors)
+        validate_gear_rules(fw, export_project, errors)
 
     #####
-    # Get and validate destinatino container
-    returns[2] = get_destination(fw, gc.destination.get("id"), errors)
+    # Get and validate destination container
+    destination = get_destination(fw, gc.destination.get("id"), errors)
 
     ####
     # Check whether there is work to do
     need_to_export = check_exported(
-        fw, returns[2], gc.config.get("force_export"), errors
+        fw, destination, gc.config.get("force_export"), errors
     )
 
     ####
@@ -62,18 +68,15 @@ def validate_context(gc):
         sys.exit(1)
 
     if not need_to_export:
-        # TODO: Fix warning message to include subject compatibity
         log.warning(
-            "Session {}/{} has already been exported and <force_export> = False. Nothing to do!".format(
-                subject.code, session.label
-            )
+            f"{destination.container_type} {destination.label} has already been exported and <force_export> = False. Nothing to do!"
         )
         log.info("Exiting")
 
         # raise RuntimeError() ?
         sys.exit(0)
 
-    return tuple(*returns)
+    return export_project, archive_project, destination
 
 
 # Questions:
@@ -141,9 +144,12 @@ def validate_gear_rules(fw, proj, errors=[]):
         proj (flywheel.Project): Project to check for gear rules
         errors (list, optional): List of error messages. Defaults to [].
     """
-    proj_name = f"{proj.parents.group}/{proj.label}"
-    log.info(f"Checking for enabled gears on {proj_name}...")
-    gear_rules = [x for x in fw.get_project_rules(proj.id) if x.disabled != True]
+    try:
+        proj_name = f"{proj.parents.group}/{proj.label}"
+        log.info(f"Checking for enabled gears on {proj_name}...")
+        gear_rules = [x for x in fw.get_project_rules(proj.id) if x.disabled != True]
+    except:
+        errors.append()
     # Any reason the above is not ... if x.disabled is False ??
     if any(gear_rules):
         message = f"Aborting Session Export: {proj_name} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior."
@@ -167,18 +173,19 @@ def check_exported(fw, dest, force_export=True, errors=[]):
             or not the container has already been exported
     """
     # Get full container with so we can get tags on container
+    exported = False
     try:
         get_fn = getattr(fw, f"get_{dest.container_type}")
-        full_dest = get_fn(dest.get("id"))
+        full_dest = get_fn(dest.id)
 
         exported = True if ("exported" in full_dest.get("tags", [])) else False
     except:
         errors.append(
             f"Could not get tags on destination {dest.container_type} container, id: {dest.id}"
         )
+        # TODO: Return False here?
 
     if exported and force_export is False:
-        return True
-    else:
         return False
-
+    else:
+        return True
