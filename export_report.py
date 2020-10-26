@@ -42,7 +42,6 @@ class ExportComparison:
 
     def compare_children_containers(self, source_finder, dest_finder, name):
 
-        dest_ids = set()
         hashes = []
         conts = []
         for c in dest_finder.iter_find():
