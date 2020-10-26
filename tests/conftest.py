@@ -6,6 +6,23 @@ from unittest.mock import Mock
 
 
 @pytest.fixture(scope="function")
+def analysis():
+    return flywheel.models.analysis_output.AnalysisOutput(
+        id="test",
+        job=flywheel.models.Job(config={"config": {"export_project": "test_proj"}}),
+        gear_info={
+            "category": "analysis",
+            "id": "test_gear",
+            "name": "test",
+            "version": "0.0.1",
+        },
+        parent=flywheel.models.container_reference.ContainerReference(
+            id="test_session", type="session"
+        ),
+    )
+
+
+@pytest.fixture(scope="function")
 def get_sdk_mock(mocker):
     spec = dir(flywheel.Flywheel)
     spec.extend(dir(flywheel.Client))
