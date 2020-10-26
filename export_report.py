@@ -1,16 +1,27 @@
 import argparse
 import flywheel
-from util import hash_value,
+from util import hash_value
 from collections import deque
 from queue import Queue
 
+
 class DiffRecord:
     def __init__(self,):
-        self.container_diffs = [] # List of dicts
-        self.file_diffs = [] #List of dicts
+        self.container_diffs = []  # List of dicts
+        self.file_diffs = []  # List of dicts
 
     def add_record(self, type, msg):
-        diff_store = getattr(self, f'{type}_diffs')
+        diff_store = getattr(self, f"{type}_diffs")
+        diff_store.append(msg)
+
+    @property
+    def get_container_diffs():
+        return self.container_diffs
+
+    @property
+    def get_file_diffs():
+        return self.file_diffs
+
 
 class ExportComparison:
     def __init__(self, source_container, dest_container, fw):
@@ -22,22 +33,28 @@ class ExportComparison:
         self.c_type = source_container.container_type
 
         if source_container.container_type != dest_container.container_type:
-            log.error('You have chosen poorly')
+            log.error("You have chosen poorly")
             sys.exit(1)
 
         # Other?
 
-    def _compare_children_containers(self, source_finder, dest_finder):
-        
-        dest_ids = {}
-        for cont in dest.iter_find():
-            dest_ids.add(cont.info.origin_id)
+    def compare_children_containers(self, source_finder, dest_finder):
 
-        for cont in source.iter_find():
-            if hash_value(cont.id) not in dest_ids:
-                self.diffs.add_record('container', f'{cont.label} not in dest project')
-            self.queue_children(container)
-
+        dest_ids = set()
+        hashes = []
+        conts = []
+        for c in dest_finder.iter_find():
+            c = c.reload()
+            hashes.append(c.info.get("export").get("origin_id"))
+            conts.append(c)
+        hash_set = set(hashes)
+        for c in source_finder.iter_find():
+            hash = hash_value(c.id)
+            if hash not in hash_set:
+                self.diffs.add_record("container", f"{c.label} not in dest project")
+                break
+            # Queue source and dest children
+            self.queue_children(c, conts[hashes.index(hash)])
 
     def compare_children_files(self, source, dest):
         source_files = set([file.hash for file in source])
@@ -45,43 +62,44 @@ class ExportComparison:
 
         # Find hashes in left set not in right
         diff = source_files.difference(dest_files)
-        
+
         # Find files corresponding to those hashes
 
         for file in source:
             if file.hash in diff:
                 self.diffs.add_record("file", f"file {file.name} not in dest project ")
         # Return files that are in source, but not in destination
-        
-    def queue_children(source, dest):
-        for child_type in cont.child_types:
-            source_children = getattr(source,child_type)
-            dest_children = getattr(dest,child_type)
+
+    def queue_children(self, source, dest):
+        for child_type in source.child_types:
+            if child_type == "analyses":
+                continue
+            source_children = getattr(source, child_type)
+            dest_children = getattr(dest, child_type)
             # flywheel.finder.Finder(), None, or list(flywheel.models.file_entry.FileEntry)
-            queue.put((source_children, dest_children))
+            self.queue.put((source_children, dest_children))
 
-    def compare(analysis_id, fw):
+    def compare(self):
 
-        source_container, dest_container = setup(analysis_id, fw)
+        self.queue_children(self.s_cont, self.d_cont)
 
-        queue_children(source_container, dest_container)
-        
-        while not queue.empty():
-            source, dest = queue.get()
+        while not self.queue.empty():
+            source, dest = self.queue.get()
             if not source:
                 # None or empty list
                 continue
             elif isinstance(source, flywheel.finder.Finder):
                 # Finder of containers
-                compare_children_containers(source, dest)
-                    
+                self.compare_children_containers(source, dest)
+
             elif type(source) is list:
-                # Files or Analyses
-                if isinstance(source[0], flywheel.models.analysis_output.AnalysisOutput):
-                    # TODO: compare_analyses ?
-                    pass
-                elif isinstance(source[0], flywheel.models.file_entry.FileEntry):
-                    compare_files(source, dest)
+                self.compare_children_files(source, dest)
+
+    def report(self):
+
+        print(self.diffs.container_diffs)
+        print(self.diffs.file_diffs)
+
 
 def setup(analysis, fw):
     analysis = fw.get_analysis(analysis)
@@ -90,34 +108,33 @@ def setup(analysis, fw):
     source_container_fn = getattr(fw, f"get_{source_id.type}")
     source_container = source_container_fn(source_id.get("id"))
 
-    dest_proj_id = analysis.job.config.get("export_project")
-    dest_proj = fw.projects.find_first(dest_proj_id)
+    dest_proj_id = analysis.job.config.get("config").get("export_project")
+    dest_proj_lookup = fw.lookup(dest_proj_id)
+    dest_proj = fw.get_project(dest_proj_lookup.id)
 
-    # TODO: Check if there is a better way to get destination container
-    dest_container = getattr(dest_proj, f"{source_id.type}s").find_first(
-        (
-            f"label={source_container.label}"
-            if source_container.label
-            else f"code={source_container.code}"
-        )
+    # May have scale issues
+    dest_container_finder = getattr(dest_proj, f"{source_id.type}s")
+    dest_container = dest_container_finder.find_first(
+        f"info.export.origin_id={hash_value(source_container.id)}"
     )
 
     return source_container, dest_container
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
 
-    parser.add_argument("-a", "--analysis", help="Analysis ID of GRP-9")
-    parser.add_argument("-k", "--api-key", help="API key")
-
-    args = parser.parse_args()
-
-    fw = flywheel.Client(args.api_key)
-
-    source_container, dest_container = setup(args.analysis, fw)
-
-    comparison = ExportComparison(source_container, dest_container, fw)
-
-    comparison.compare()
-    comparison.report()
+##if __name__ == "__main__":
+#    parser = argparse.ArgumentParser()
+#
+#    parser.add_argument("-a", "--analysis", help="Analysis ID of GRP-9")
+#    parser.add_argument("-k", "--api-key", help="API key")
+#
+#    args = parser.parse_args()
+#
+#    fw = flywheel.Client(args.api_key)
+#
+#    source_container, dest_container = setup(args.analysis, fw)
+#
+#    comparison = ExportComparison(source_container, dest_container, fw)
+#
+#    comparison.compare()
+#    comparison.report()
 
