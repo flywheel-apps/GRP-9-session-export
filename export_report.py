@@ -1,26 +1,28 @@
 import argparse
 import flywheel
 from util import hash_value
-from collections import deque
+from collections import deque, namedtuple
 from queue import Queue
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class DiffRecord:
     def __init__(self,):
-        self.container_diffs = []  # List of dicts
-        self.file_diffs = []  # List of dicts
+        self.records = []  # List of dicts
 
-    def add_record(self, type, msg):
-        diff_store = getattr(self, f"{type}_diffs")
-        diff_store.append(msg)
+    def add_record(self, c_type, msg):
+        self.records.append([c_type, msg])
 
     @property
-    def get_container_diffs():
-        return self.container_diffs
+    def get_records(self):
+        return self.records
 
-    @property
-    def get_file_diffs():
-        return self.file_diffs
+    def iter_records(self):
+        for record in self.records:
+            yield record
 
 
 class ExportComparison:
@@ -38,7 +40,7 @@ class ExportComparison:
 
         # Other?
 
-    def compare_children_containers(self, source_finder, dest_finder):
+    def compare_children_containers(self, source_finder, dest_finder, name):
 
         dest_ids = set()
         hashes = []
@@ -51,12 +53,14 @@ class ExportComparison:
         for c in source_finder.iter_find():
             hash = hash_value(c.id)
             if hash not in hash_set:
-                self.diffs.add_record("container", f"{c.label} not in dest project")
+                self.diffs.add_record(
+                    "container", f"{name}/{c.label} not in dest project"
+                )
                 break
             # Queue source and dest children
-            self.queue_children(c, conts[hashes.index(hash)])
+            self.queue_children(c, conts[hashes.index(hash)], prepend=f"{name}/")
 
-    def compare_children_files(self, source, dest):
+    def compare_children_files(self, source, dest, name):
         source_files = set([file.hash for file in source])
         dest_files = set([file.hash for file in dest])
 
@@ -67,38 +71,40 @@ class ExportComparison:
 
         for file in source:
             if file.hash in diff:
-                self.diffs.add_record("file", f"file {file.name} not in dest project ")
+                self.diffs.add_record(
+                    "file", f"{name}/: file {file.name} not in dest project"
+                )
         # Return files that are in source, but not in destination
 
-    def queue_children(self, source, dest):
+    def queue_children(self, source, dest, prepend="/"):
         for child_type in source.child_types:
             if child_type == "analyses":
                 continue
             source_children = getattr(source, child_type)
             dest_children = getattr(dest, child_type)
             # flywheel.finder.Finder(), None, or list(flywheel.models.file_entry.FileEntry)
-            self.queue.put((source_children, dest_children))
+            name = prepend + (source.label if source.label else source.code)
+            self.queue.put((name, [source_children, dest_children]))
 
     def compare(self):
 
-        self.queue_children(self.s_cont, self.d_cont)
+        self.queue_children(self.s_cont, self.d_cont, prepend="")
 
         while not self.queue.empty():
-            source, dest = self.queue.get()
+            name, [source, dest] = self.queue.get()
             if not source:
                 # None or empty list
                 continue
             elif isinstance(source, flywheel.finder.Finder):
                 # Finder of containers
-                self.compare_children_containers(source, dest)
+                self.compare_children_containers(source, dest, name)
 
             elif type(source) is list:
-                self.compare_children_files(source, dest)
+                self.compare_children_files(source, dest, name)
 
     def report(self):
-
-        print(self.diffs.container_diffs)
-        print(self.diffs.file_diffs)
+        for record in self.diffs.iter_records():
+            log.warning(f"{record[0]} -- {record[1]}")
 
 
 def setup(analysis, fw):
