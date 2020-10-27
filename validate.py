@@ -10,8 +10,8 @@ log = logging.getLogger(__name__)
 def false_if_exc_is_not_found_or_forbidden(exception):
     if hasattr(exception, "status"):
         if exception.status in [401, 403, 404, 405, 422]:
-            return False
-    return True
+            return True
+    return False
 
 
 # TODO capture run.py's main validation functionality with the enhancement of validating as
@@ -71,10 +71,10 @@ def validate_context(gc, exc_info=True):
     #####
     # Check for projet rules
     if gc.config.get("check_gear_rules"):
-        rules = validate_gear_rules(fw, export_project, errors)
+        rules = validate_gear_rules(fw, export_project)
         if rules:
             if exc_info:
-                message = f"Aborting Session Export: {proj_name} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior."
+                message = f"Aborting Session Export: {export_project.label} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior."
                 log.error(message)
             sys.exit(1)
         else:
@@ -202,5 +202,7 @@ def container_needs_export(container, config):
             or not the container has already been exported
     """
     force_export = config.get("force_export", False)
-    exported_tag = bool("EXPORTED" in container.get("tags", list()))
+    exported_tag = bool(
+        "EXPORTED" in container.get("tags") if container.get("tags") else list()
+    )
     return force_export or not exported_tag

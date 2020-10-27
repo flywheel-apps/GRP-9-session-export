@@ -1,10 +1,11 @@
 from unittest.mock import MagicMock
+from contextlib import nullcontext as does_not_raise
 
 import flywheel
 import pytest
 
 from validate import (
-    check_exported,
+    container_needs_export,
     get_destination,
     get_project,
     validate_context,
@@ -16,152 +17,116 @@ class TestGetProject:
     def test_project_exists(self, sdk_mock):
         test_proj = "test/test_proj"
         sdk_mock.lookup.return_value = flywheel.Project(label=test_proj)
-        errors = []
 
-        proj = get_project(sdk_mock, test_proj, errors)
+        proj = get_project(sdk_mock, test_proj)
         sdk_mock.lookup.assert_called_once_with(test_proj)
 
         assert isinstance(proj, flywheel.Project)
         assert proj.label == test_proj
-        assert errors == []
 
-    @pytest.mark.parametrize(
-        "errors,length", [([], 1), (["test"], 2), (["test1", "test2"], 3)]
-    )
-    def test_project_does_not_exist(self, sdk_mock, errors, length):
+    # @pytest.mark.parametrize(
+    #     "errors,length", [([], 1), (["test"], 2), (["test1", "test2"], 3)]
+    # )
+    # Can't test backoff easily, or figure out a way
+    def test_project_does_not_exist(self, sdk_mock):
         test_proj = "test/test_proj"
-        sdk_mock.lookup.side_effect = flywheel.rest.ApiException()
+        sdk_mock.lookup.side_effect = flywheel.rest.ApiException(status=403)
         sdk_mock.lookup.return_value = None
 
-        proj = get_project(sdk_mock, test_proj, errors)
-
-        assert len(errors) == length
-        assert proj == None
+        with pytest.raises(flywheel.rest.ApiException) as e:
+            proj = get_project(sdk_mock, test_proj)
+            assert e.status == 403
 
 
 class TestGetDestination:
     @pytest.mark.parametrize(
-        "parent,errlen",
+        "parent,raising",
         [
-            (flywheel.Subject(label="test"), 0),
-            (flywheel.Session(label="test"), 0),
-            (flywheel.Group(label="test"), 1),
-            (flywheel.Project(label="test"), 1),
-            (flywheel.Acquisition(label="test"), 1),
+            (flywheel.Subject(label="test"), does_not_raise()),
+            (flywheel.Session(label="test"), does_not_raise()),
+            (flywheel.Group(label="test"), pytest.raises(ValueError)),
+            (flywheel.Project(label="test"), pytest.raises(ValueError)),
+            (flywheel.Acquisition(label="test"), pytest.raises(ValueError)),
         ],
     )
-    def test_container(self, sdk_mock, parent, errlen):
+    def test_container(self, sdk_mock, parent, raising):
         container = flywheel.models.analysis_output.AnalysisOutput(
             parent=parent, id="test"
         )
         sdk_mock.get_analysis.return_value = container
+        sdk_mock.get.return_value = parent
 
-        errors = []
+        with raising:
+            dest = get_destination(sdk_mock, "test")
 
-        dest = get_destination(sdk_mock, "test", errors)
+            sdk_mock.get_analysis.assert_called_once_with("test")
+            # assert dest.__class__ == parent.__class__
+            assert isinstance(dest, parent.__class__)
 
-        assert len(errors) == errlen
-        sdk_mock.get_analysis.assert_called_once_with("test")
-        # assert dest.__class__ == parent.__class__
-        assert isinstance(dest, parent.__class__)
-
-    @pytest.mark.parametrize(
-        "errors,length", [([], 1), (["test"], 2), (["test1", "test2"], 3)]
-    )
-    def test_errors(self, sdk_mock, errors, length):
+    def test_analysis_does_not_exist(self, sdk_mock):
         container = flywheel.models.analysis_output.AnalysisOutput(
             parent=flywheel.Project(), id="test"
         )
+        sdk_mock.get.side_effect = flywheel.rest.ApiException(status=404)
         sdk_mock.get_analysis.return_value = container
-        dest = get_destination(sdk_mock, "test", errors)
-
-        assert len(errors) == length
-        #        assert dest.__class__ == flywheel.Project().__class__
-        assert isinstance(dest, flywheel.Project)
-
-    def test_analysis_does_not_exist(self, sdk_mock):
-
-        sdk_mock.get_analysis.side_effect = flywheel.rest.ApiException()
-        sdk_mock.get_analysis.return_value = None
-        errors = []
-
-        dest = get_destination(sdk_mock, "test", errors)
-
-        assert len(errors) == 1
-        assert dest is None
+        with pytest.raises(flywheel.rest.ApiException):
+            dest = get_destination(sdk_mock, "test")
+            assert isinstance(dest, flywheel.Project)
 
 
 class TestValidateGearRules:
     @pytest.mark.parametrize(
-        "rules,errlen",
+        "rules,returns",
         [
-            ([flywheel.Rule(disabled=True)], 0),
-            ([], 0),
+            ([flywheel.Rule(disabled=True)], True),
+            ([], True),
             # (None, 0), # Assume get_project_rules returns [] and not None
-            ([flywheel.Rule(disabled=False)], 1),
+            ([flywheel.Rule(disabled=False)], False),
         ],
     )
-    def test_gear_rules(self, sdk_mock, rules, errlen):
+    def test_gear_rules(self, sdk_mock, rules, returns):
         sdk_mock.get_project_rules.return_value = rules
         project = flywheel.Project(
             id="test", label="test", parents=flywheel.ContainerParents(group="test")
         )
         errors = []
-        validate_gear_rules(sdk_mock, project, errors)
+        val = validate_gear_rules(sdk_mock, project)
 
         sdk_mock.get_project_rules.assert_called_once_with(project.id)
-        assert len(errors) == errlen
+        assert val == returns
 
-    @pytest.mark.parametrize(
-        "errors,length", [([], 1), (["test"], 2), (["test1", "test2"], 3)]
-    )
-    def test_errors(self, sdk_mock, errors, length):
+    def test_project_doesnt_exist(self, sdk_mock):
+        sdk_mock.get_project_rules.side_effect = flywheel.rest.ApiException(status=403)
         project = flywheel.Project(
             id="test", label="test", parents=flywheel.ContainerParents(group="test")
         )
-        sdk_mock.get_project_rules.return_value = [flywheel.Rule(disabled=False)]
-        validate_gear_rules(sdk_mock, project, errors)
-
-        assert len(errors) == length
+        with pytest.raises(flywheel.rest.ApiException):
+            validate_gear_rules(sdk_mock, project)
 
 
-class TestCheckExported:
+class TestNeedsExport:
     @pytest.mark.parametrize(
         "dest, tags, force, result",
         [
             (flywheel.Subject(id="test"), [], True, True),
             (flywheel.Subject(id="test"), [], False, True),
-            (flywheel.Subject(id="test"), ["exported"], True, True),
-            (flywheel.Subject(id="test"), ["exported"], False, False),
+            (flywheel.Subject(id="test"), ["EXPORTED"], True, True),
+            (flywheel.Subject(id="test"), ["EXPORTED"], False, False),
             (flywheel.Session(id="test"), [], True, True),
             (flywheel.Session(id="test"), [], False, True),
-            (flywheel.Session(id="test"), ["exported"], True, True),
-            (flywheel.Session(id="test"), ["exported"], False, False),
+            (flywheel.Session(id="test"), ["EXPORTED"], True, True),
+            (flywheel.Session(id="test"), ["EXPORTED"], False, False),
         ],
     )
-    def test_container_exists(self, sdk_mock, dest, tags, force, result):
+    def test_container_exists(self, dest, tags, force, result):
         dest.tags = tags
-        sdk_fn = getattr(sdk_mock, f"get_{dest.__class__.__name__.lower()}")
-        sdk_fn.return_value = dest
 
-        errors = []
-        out = check_exported(sdk_mock, dest, force, errors)
+        out = container_needs_export(dest, {"force_export": force})
 
-        sdk_fn.assert_called_once_with("test")
         assert out == result
 
-    @pytest.mark.parametrize(
-        "errors,errlen", [([], 1), (["test"], 2), (["test1", "test2"], 3)]
-    )
-    def test_container_does_not_exist(self, sdk_mock, errors, errlen):
-        dest = flywheel.Subject()
-        sdk_mock.get_subject.side_effect = flywheel.rest.ApiException()
-        out = check_exported(sdk_mock, dest, True, errors)
 
-        assert len(errors) == errlen
-
-
-@pytest.fixture
+@pytest.fixture(scope="function")
 def gear_context():
     gc = MagicMock(spec=dir(flywheel.GearContext))
     gc.destination = {"id": "test"}
@@ -207,66 +172,64 @@ class TestValidateContext:
         ],
     )
     def test_validate_calls(self, mocker, gear_context, config, call_num):
+        mock_proj = (
+            flywheel.Project(
+                label="test",
+                parents=flywheel.models.container_parents.ContainerParents(
+                    group="test"
+                ),
+            ),
+        )
         gear_context.config = config
         get_proj_mock = mocker.patch("validate.get_project")
-        get_proj_mock.return_value = ""
+        get_proj_mock.return_value = mock_proj
 
         get_dest_mock = mocker.patch("validate.get_destination")
-        get_dest_mock.return_value = ""
+        get_dest_mock.return_value = flywheel.Subject(label="test")
 
-        check_exported_mock = mocker.patch("validate.check_exported")
+        check_exported_mock = mocker.patch("validate.container_needs_export")
         check_exported_mock.return_value = True
 
         check_gear_rules_mock = mocker.patch("validate.validate_gear_rules")
+        check_gear_rules_mock.return_value = False
 
         export, archive, dest = validate_context(gear_context)
 
         assert get_proj_mock.call_count == call_num
-        get_dest_mock.assert_called_once_with(gear_context.client, "test", [])
+        get_dest_mock.assert_called_once_with(gear_context.client, "test")
         check_exported_mock.assert_called_once_with(
-            gear_context.client, "", config["force_export"], []
+            flywheel.Subject(label="test"), config
         )
         if "check_gear_rules" in config:
-            check_gear_rules_mock.assert_called_once_with(gear_context.client, "", [])
+            check_gear_rules_mock.assert_called_once_with(
+                gear_context.client, mock_proj
+            )
         else:
             check_gear_rules_mock.assert_not_called()
 
     @pytest.mark.parametrize(
         "proj", [None, "proj"],
     )
-    def test_errors(self, mocker, gear_context, caplog, proj):
+    def test_errors(self, mocker, sdk_mock, gear_context, caplog, proj):
         gear_context.config = {"export_project": proj}
 
-        def get_proj_side_effect(fw, proj, errors):
+        def get_proj_side_effect(fw, proj):
             return flywheel.Project(
                 id="test",
                 label="test",
                 parents=flywheel.ContainerParents(group="test"),
             )
 
-        def get_dest_side_effect(fw, proj, errors):
-            return flywheel.Subject(id="test")
-
-        for api_method in [
-            "lookup",
-            "get_analysis",
-            "get_project_rules",
-            "get_session",
-            "get_subject",
-        ]:
-            getattr(
-                gear_context.client, api_method
-            ).side_effect = flywheel.rest.ApiException
         if not proj is None:
             # Mock get_project to return an actual project
             get_proj_mock = mocker.patch("validate.get_project")
             get_proj_mock.side_effect = get_proj_side_effect
 
-            # Mock get_destination to return an actual container
-            get_dest_mock = mocker.patch("validate.get_destination")
-            get_dest_mock.side_effect = get_dest_side_effect
-
         with pytest.raises(SystemExit):
             export, archive, dest = validate_context(gear_context)
-            assert all([rec.levelno == logging.ERROR for rec in caplog.get_records()])
-            assert len(caplog.record_tuples) == 4
+            assert all(
+                [
+                    rec.levelno == logging.ERROR
+                    for rec in caplog.get_records(when="teardown")
+                ]
+            )
