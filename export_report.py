@@ -126,20 +126,20 @@ def setup(analysis, fw):
     return source_container, dest_container
 
 
-##if __name__ == "__main__":
-#    parser = argparse.ArgumentParser()
-#
-#    parser.add_argument("-a", "--analysis", help="Analysis ID of GRP-9")
-#    parser.add_argument("-k", "--api-key", help="API key")
-#
-#    args = parser.parse_args()
-#
-#    fw = flywheel.Client(args.api_key)
-#
-#    source_container, dest_container = setup(args.analysis, fw)
-#
-#    comparison = ExportComparison(source_container, dest_container, fw)
-#
-#    comparison.compare()
-#    comparison.report()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-a", "--analysis", help="Analysis ID of GRP-9")
+    parser.add_argument("-k", "--api-key", help="API key")
+
+    args = parser.parse_args()
+
+    fw = flywheel.Client(args.api_key)
+
+    source_container, dest_container = setup(args.analysis, fw)
+
+    comparison = ExportComparison(source_container, dest_container, fw)
+
+    comparison.compare()
+    comparison.report()
 
