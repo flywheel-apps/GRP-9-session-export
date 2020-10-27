@@ -122,7 +122,7 @@ def get_destination(fw, dest_id, errors=[]):
         # Destination will be analysis since this is a gear run.
         #   Find parent to get export destination container
         dest_analysis = fw.get_analysis(dest_id)
-        dest_container = dest_analysis.parent
+        dest_container = fw.get(dest_analysis.parent.id)
         log.debug(f"Found destination container id {dest_container.id}")
     except:
         errors.append(f"Could not find analysis with id {dest_id}")
