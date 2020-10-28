@@ -11,10 +11,19 @@ log = logging.getLogger(__name__)
 
 
 class DiffRecord:
-    def __init__(self,):
+    """Class to contain records of difference between source and destination containers
+    """
+
+    def __init__(self):
         self.records = []  # List of dicts
 
     def add_record(self, c_type, msg):
+        """Add a record for the given container type with a message
+
+        Args:
+            c_type (str): Container type or 'file', i.e. 'session','subject' or 'file'
+            msg (str): Difference message
+        """
         self.records.append([c_type, msg])
 
     @property
@@ -27,7 +36,17 @@ class DiffRecord:
 
 
 class ExportComparison:
+    """Class for comparing source and destination containers.  Loops through child containers and reports differences in containers and files.  This would mainly be used to produce a human and/or machine readable list of differences between a source and exported container
+    """
+
     def __init__(self, source_container, dest_container, fw):
+        """Initializer
+
+        Args:
+            source_container (flywheel.Subject or flywheel.Session): Source container
+            dest_container (flywheel.Subject or flywheel.Session): Destination or exported container
+            fw (flywheel.Flywheel): Flywheel client
+        """
         self.diffs = DiffRecord()
         self.queue = Queue()
         self.s_cont = source_container
@@ -42,6 +61,13 @@ class ExportComparison:
         # Other?
 
     def compare_children_containers(self, source_finder, dest_finder, name):
+        """Function to compare containers and their children
+
+        Args:
+            source_finder (flywheel.finder.Finder): Finder of containers from source container
+            dest_finder (flywheel.finder.Finder): Finder of containers from destination container
+            name (str): Parent container name, used for reporting differences as paths
+        """
 
         hashes = []
         conts = []
@@ -61,6 +87,13 @@ class ExportComparison:
                 self.queue_children(c, conts[hashes.index(hash)], prepend=f"{name}/")
 
     def compare_children_files(self, source, dest, name):
+        """Function to compare files that are children of a container
+
+        Args:
+            source (List[flywheel.FileEntry]): Children files form source container
+            dest (List[flywheel.FileEntry]): Children files from source container
+            name (str): Parent container name, used for reporting differences as paths
+        """
         source_files = set([file.hash for file in source])
         dest_files = set([file.hash for file in dest])
 
@@ -74,9 +107,15 @@ class ExportComparison:
                 self.diffs.add_record(
                     "file", f"{name}/: file {file.name} not in dest project"
                 )
-        # Return files that are in source, but not in destination
 
     def queue_children(self, source, dest, prepend="/"):
+        """Add children of source and destination container to the queue
+
+        Args:
+            source (flywheel.Session, flywheel.Subject, or flywheel.Acquisition): Source container
+            dest (flywheel.Session, flywheel.Subject, or flywheel.Acquisition): Destination container
+            prepend (str, optional): Optional string to prepend onto name, used to build path to report differences. Defaults to "/".
+        """
         for child_type in source.child_types:
             if child_type == "analyses":
                 continue
@@ -87,6 +126,8 @@ class ExportComparison:
             self.queue.put((name, [source_children, dest_children]))
 
     def compare(self):
+        """Main algorithm to compare two containers.  Maintains a queue and pops elements from queue until empty.  For each element popped from the queue, the relevant compare method is called: compare_children_containers if a finder is found, or compare_children_files if a list is found.
+        """
 
         self.queue_children(self.s_cont, self.d_cont, prepend="")
 
@@ -103,11 +144,24 @@ class ExportComparison:
                 self.compare_children_files(source, dest, name)
 
     def report(self):
+        """Print out report of container and file differences
+        """
         for record in self.diffs.iter_records():
             log.warning(f"{record[0]} -- {record[1]}")
 
 
 def setup(analysis, fw):
+    """Find source and destination container of the given session-export analysis ID
+
+    Args:
+        analysis (str): Analysis ID
+        fw (flywheel.Flywheel): Flywheel client
+
+    Returns:
+        tuple: Source and destination container
+            (flywheel.Session or flywheel.Subject): Source container
+            (flywheel.Session or flywheel.Subject): Destination container
+    """
     analysis = fw.get_analysis(analysis)
 
     source_id = analysis.parent
