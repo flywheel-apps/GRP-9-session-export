@@ -143,3 +143,75 @@ class TestCompareChildrenFiles:
         else:
             assert record_mock.call_count == num
 
+
+class TestQueueChildren:
+    @pytest.mark.parametrize(
+        "container,child_types",
+        [
+            (flywheel.Session(), ["acquisitions", "files"]),
+            (flywheel.Subject(), ["sessions", "files"]),
+        ],
+    )
+    def test_containers(self, exp, container, child_types, mocker):
+        queue_mock = mocker.patch.object(exp.queue, "put")
+        cont = MagicMock(spec=dir(container).extend(child_types))
+        cont.child_types = child_types
+        for child in child_types:
+            getattr(cont, child).return_value = flywheel.finder.Finder(
+                context="test", method="test"
+            )
+
+        exp.queue_children(cont, cont)
+
+        assert queue_mock.call_count == 2
+
+
+class QueueMock:
+    def __init__(self, arr):
+        self.arr = arr
+
+        self.empty_call_count = 0
+        self.get_call_count = 0
+
+    def empty(self):
+        self.empty_call_count += 1
+        return len(self.arr) == 0
+
+    def get(self):
+        self.get_call_count += 1
+        return self.arr.pop()
+
+    def put(self, item):
+        self.arr.append(item)
+
+
+@pytest.fixture
+def queue_mock():
+    def _fn(items):
+        x = QueueMock(items)
+        return x
+
+    return _fn
+
+
+def test_compare(exp, mocker, queue_mock):
+    cont_mock = mocker.patch.object(exp, "compare_children_containers")
+    file_mock = mocker.patch.object(exp, "compare_children_files")
+    children_mock = mocker.patch.object(exp, "queue_children")
+    test_finder = flywheel.finder.Finder(context="test", method="test")
+    queue_mock = queue_mock(
+        [
+            ("test_file", [["test"], ["test"]]),
+            ("test_finder", [test_finder, test_finder]),
+        ]
+    )
+    exp.queue = queue_mock
+
+    exp.compare()
+
+    assert queue_mock.empty_call_count == 3
+    assert queue_mock.get_call_count == 2
+
+    cont_mock.assert_called_once()
+    file_mock.assert_called_once()
+
