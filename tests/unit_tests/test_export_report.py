@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 import pytest
-from queue import Queue
+import queue
 from random import getrandbits as rand
 from unittest.mock import MagicMock
 from contextlib import nullcontext as does_not_raise
@@ -50,8 +50,8 @@ def test_init(sdk_mock):
 
     export = export_report.ExportComparison(src, dest, sdk_mock)
 
-    assert isinstance(export.diffs, export_record.DiffRecord())
-    assert isinstance(export.queue, queue.Queue())
+    assert isinstance(export.diffs, export_report.DiffRecord)
+    assert isinstance(export.queue, queue.Queue)
     assert export.s_cont == src
     assert export.d_cont == dest
     assert export.c_type == src.container_type
@@ -59,7 +59,7 @@ def test_init(sdk_mock):
 
 def test_init_containers_not_same_type(sdk_mock):
     src = flywheel.Subject(label="test")
-    dest = flywheel.Subject(label="test-2")
+    dest = flywheel.Session(label="test-2")
     with pytest.raises(SystemExit):
         export = export_report.ExportComparison(src, dest, sdk_mock)
 
@@ -71,7 +71,7 @@ def generate_finder(mocker, mock_iter_finder):
         dest = []
         for idx in range(num):
             rand1, rand2 = rand(30), rand(30)
-            rand_hash = hash_value(str(rand1)) if same else rand(30)
+            rand_hash = hash_value(str(rand1)) if same else hash_value(str(rand(30)))
             src_c = flywheel.Session(label="test", id=str(rand1))
             dest_c = flywheel.Session(
                 label="test",
@@ -93,13 +93,53 @@ def generate_finder(mocker, mock_iter_finder):
 
 
 class TestCompareChildrenContainers:
+    @pytest.mark.parametrize("num", [0, 1, 5])
     @pytest.mark.parametrize("same", [True, False])
-    def test_containers_same(self, exp, generate_finder, mocker, same):
+    def test_containers(self, exp, generate_finder, mocker, same, num):
         queue_mock = mocker.patch.object(exp, "queue_children")
         record_mock = mocker.patch.object(exp.diffs, "add_record")
-        src, dest = generate_finder(1, same=same)
+        src, dest = generate_finder(num, same=same)
 
         exp.compare_children_containers(src, dest, "test-sub")
+        # queue_mock.assert_called_with
 
-        queue_mock.assert_called_with
+        if not same:
+            assert record_mock.call_count == num
+            assert queue_mock.call_count == 0
+        else:
+            assert record_mock.call_count == 0
+            assert queue_mock.call_count == num
+
+
+@pytest.fixture
+def gen_files():
+    def _fn(num=5, same=True):
+        src = []
+        dest = []
+        for idx in range(num):
+            hash = hash_value(str(rand(30)))
+            hash2 = hash if same else hash_value(str(rand(30)))
+
+            file1 = flywheel.FileEntry(hash=hash)
+            file2 = flywheel.FileEntry(hash=hash2)
+
+            src.append(file1)
+            dest.append(file2)
+        return src, dest
+
+    return _fn
+
+
+class TestCompareChildrenFiles:
+    @pytest.mark.parametrize("num", [0, 1, 5])
+    @pytest.mark.parametrize("same", [True, False])
+    def test_files(self, mocker, gen_files, exp, same, num):
+
+        record_mock = mocker.patch.object(exp.diffs, "add_record")
+        src, dest = gen_files(num, same)
+        exp.compare_children_files(src, dest, "test-ses")
         if same:
+            assert record_mock.call_count == 0
+        else:
+            assert record_mock.call_count == num
+
