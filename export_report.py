@@ -1,10 +1,11 @@
 import argparse
 import flywheel
 from util import hash_value
-from collections import deque, namedtuple
 from queue import Queue
+import sys
 
 import logging
+
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +56,9 @@ class ExportComparison:
                 self.diffs.add_record(
                     "container", f"{name}/{c.label} not in dest project"
                 )
-            # Queue source and dest children
-            self.queue_children(c, conts[hashes.index(hash)], prepend=f"{name}/")
+            else:
+                # Queue source and dest children
+                self.queue_children(c, conts[hashes.index(hash)], prepend=f"{name}/")
 
     def compare_children_files(self, source, dest, name):
         source_files = set([file.hash for file in source])
