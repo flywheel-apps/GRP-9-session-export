@@ -55,7 +55,6 @@ class ExportComparison:
                 self.diffs.add_record(
                     "container", f"{name}/{c.label} not in dest project"
                 )
-                break
             # Queue source and dest children
             self.queue_children(c, conts[hashes.index(hash)], prepend=f"{name}/")
 

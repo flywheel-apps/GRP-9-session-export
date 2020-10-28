@@ -37,6 +37,31 @@ def sdk_mock(get_sdk_mock):
     return get_sdk_mock.return_value
 
 
+class MockFinder:
+    def __init__(self, arr):
+        self.arr = arr
+
+    def iter(self):
+        for x in self.arr:
+            yield x
+
+    def iter_find(self):
+        for x in self.arr:
+            yield x
+
+    def __len__(self):
+        return len(self.arr)
+
+    def __call__(self):
+        return self.arr
+
+@pytest.fixture
+def mock_iter_finder():
+    def _fn(arr):
+        return MockFinder(arr)
+
+    return _fn
+
 @pytest.fixture
 def mock_finder(
     container=None,
