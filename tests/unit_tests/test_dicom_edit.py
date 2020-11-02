@@ -4,6 +4,7 @@ from pydicom.dataelem import RawDataElement
 from pydicom.tag import Tag
 
 from dicom_edit import *
+from dicom_metadata import get_pydicom_header
 
 
 def test_write_dcm_to_tempfile():
@@ -13,15 +14,7 @@ def test_write_dcm_to_tempfile():
 
 
 def test_character_set_callback():
-    raw_elem = RawDataElement(
-        Tag(0x00080005),
-        "UN",
-        14,
-        b"iso8859",
-        770,
-        False,
-        True,
-    )
+    raw_elem = RawDataElement(Tag(0x00080005), "UN", 14, b"iso8859", 770, False, True,)
     raw_elem_fix = character_set_callback(raw_elem)
     assert raw_elem_fix.VR == "CS"
 
@@ -36,7 +29,26 @@ def test_can_update_dicom():
 def test_edit_dicom():
     dcm_path = get_testdata_files("MR_small.dcm")[0]
     dcm = pydicom.dcmread(dcm_path)
-    with tempfile.NamedTemporaryFile(suffix='.dcm') as tempf:
+    with tempfile.NamedTemporaryFile(suffix=".dcm") as tempf:
         dcm.save_as(tempf.name)
         assert edit_dicom(tempf.name, {"PatientID": "Flywheel"})
         assert edit_dicom(tempf.name, {"PatientID": 2}) is None
+
+
+def test_dicom_list_updater_no_difference(caplog):
+    dcm_path = get_testdata_files("MR_small.dcm")[0]
+    dcm = pydicom.dcmread(dcm_path)
+    header = get_pydicom_header(dcm)
+    exp_header = header.copy()
+    exp_header["path"] = dcm_path
+    dcm_updater = DicomUpdater([dcm_path], header, caplog)
+    assert exp_header == dcm_updater.local_common_dicom_dict
+    assert dcm_updater.safe_to_update
+    assert not any(
+        [
+            dcm_updater.update_dict,
+            dcm_updater.header_diff_dict,
+            dcm_updater.update_dicoms(),
+            dcm_updater.non_dicom_paths,
+        ]
+    )

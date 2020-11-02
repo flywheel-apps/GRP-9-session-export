@@ -1,14 +1,22 @@
 import logging
+import os
 import tempfile
-import pydicom
+import zipfile
+from collections import namedtuple
+from pprint import pformat
 
+import pydicom
+from pydicom.datadict import keyword_dict, dictionary_VR
 from flywheel_metadata.file.dicom.fixer import fw_pydicom_config
+
+from dicom_metadata import get_compatible_fw_header, get_header_dict_list
+from util import get_dict_list_common_dict
 
 log = logging.getLogger(__name__)
 
 
 def write_dcm_to_tempfile(dicom_ds):
-    with tempfile.NamedTemporaryFile(suffix='.dcm') as tempf:
+    with tempfile.NamedTemporaryFile(suffix=".dcm") as tempf:
         dicom_ds.save_as(tempf.name)
 
 
@@ -31,7 +39,11 @@ def get_dicom_save_config_kwargs(dicom_path):
     log.debug("Getting save configuration for %s", dicom_path)
     default_pydicom_config = {"use_fw_callback": False}
     fw_fixer_config = {"callback": character_set_callback, "fix_vm1_strings": False}
-    fw_fixer_un_vr_config = {"callback": character_set_callback, "fix_vm1_strings": False, "replace_un_with_known_vr": False}
+    fw_fixer_un_vr_config = {
+        "callback": character_set_callback,
+        "fix_vm1_strings": False,
+        "replace_un_with_known_vr": False,
+    }
     for conf_kwargs in [default_pydicom_config, fw_fixer_config, fw_fixer_un_vr_config]:
         try:
             write_dcm_at_path_to_temp_with_config(dicom_path, **conf_kwargs)
@@ -52,20 +64,35 @@ def can_update_dicom_tag(dcm_path, tag_keyword, tag_value, **fw_config_kwargs):
         # We could have decode problems with the current tag/value
         try:
             dcm_tag_value = dcm.get(tag_keyword)
-            log.debug("%s is present in DICOM header with value %s", tag_keyword, str(dcm_tag_value))
+            log.debug(
+                "%s is present in DICOM header with value %s",
+                tag_keyword,
+                str(dcm_tag_value),
+            )
         except:
             log.warning("Could not read current %s value for %s", tag_keyword, dcm_path)
     else:
         log.debug("%s is not currently present in DICOM header")
 
-    log.debug("Testing whether %s can be set as %s and saved for %s", tag_keyword, str(tag_value), dcm_path)
+    log.debug(
+        "Testing whether %s can be set as %s and saved for %s",
+        tag_keyword,
+        str(tag_value),
+        dcm_path,
+    )
     try:
         setattr(dcm, tag_keyword, tag_value)
         with fw_pydicom_config(**fw_config_kwargs):
             write_dcm_to_tempfile(dcm)
         can_update_tag = True
     except:
-        log.error("Exception raised when attempting to set %s as %s for %s", tag_keyword, str(tag_value), dcm_path, exc_info=True)
+        log.error(
+            "Exception raised when attempting to set %s as %s for %s",
+            tag_keyword,
+            str(tag_value),
+            dcm_path,
+            exc_info=True,
+        )
     return can_update_tag
 
 
@@ -111,3 +138,212 @@ def edit_dicom(dicom_path, update_dict):
             log.error("An exception was raised when attempting to save %s", dicom_path)
             return None
 
+
+class DicomUpdater:
+    """
+    Class for comparing and updating DICOM files against Flywheel DICOM metadata
+    """
+    exclude_vrs = ("OF", "SQ", "UI", None)
+
+    def __init__(self, dicom_path_list, flywheel_header, files_log):
+        """
+
+        Args:
+            dicom_path_list (list): list of paths to DICOM files to compare against
+                flywheel_header
+            flywheel_header (dict): flywheel dicom metadata to use for comparison
+                and update of DICOM files in dicom_path_list
+            files_log (logging.Logger): logger to use
+        """
+        self.dicom_path_list = dicom_path_list
+        self.log = files_log
+        # Backwards compatibility for VM strings
+        self.fw_header = get_compatible_fw_header(flywheel_header)
+        self._dicom_dict_list = None
+        self._local_common_dicom_dict = None
+        self._local_dicom_tags = None
+        self._header_diff_dict = None
+        self._update_dict = None
+        self._safe_to_update = None
+
+    @property
+    def dicom_dict_list(self):
+        """
+        List of dictionaries representing the local DICOM headers for the files
+            in self.dicom_path_list + a `path` key. Files without public DICOM
+            tags are excluded from this list.
+
+        """
+        if not isinstance(self._dicom_dict_list, list):
+            self._dicom_dict_list = get_header_dict_list(self.dicom_path_list)
+        return self._dicom_dict_list
+
+    @property
+    def non_dicom_paths(self):
+        """paths from the list to files that do not contain public DICOM tags"""
+        dict_paths = {idict.get("path") for idict in self.dicom_dict_list}
+        return [path for path in self.dicom_path_list if path not in dict_paths]
+
+    @property
+    def local_common_dicom_dict(self):
+        """dict with local DICOM tags that share the same value across all files."""
+        if not isinstance(self._local_common_dicom_dict, dict):
+            self._local_common_dicom_dict = get_dict_list_common_dict(
+                self.dicom_dict_list
+            )
+        return self._local_common_dicom_dict
+
+    @property
+    def local_dicom_tags(self):
+        """List of DICOM tags that are defined in the list of local DICOMs"""
+        if not isinstance(self._local_dicom_tags, list):
+            key_list = list(set().union(*(d.keys() for d in self.dicom_dict_list)))
+            self._local_dicom_tags = [key for key in key_list if keyword_dict.get(key)]
+        return self._local_dicom_tags
+
+    @property
+    def header_diff_dict(self):
+        """
+        Dict representing the difference between Flywheel info.header.dicom
+            and the local DICOM headers. Tags that are in the local files but
+            do not share a single value across the list of DICOMs are specifically
+            excluded.
+        """
+        if not isinstance(self._header_diff_dict, dict):
+            diff_dict = dict()
+            update_tag_entry = namedtuple("Update", "fw_value, local_value")
+            add_tag_entry = namedtuple("Add", "fw_value")
+            for tag, tag_value in self.fw_header.items():
+                local_tag_value = self.local_common_dicom_dict.get(tag)
+                add_tag = bool(tag not in self.local_dicom_tags)
+                if tag_value != local_tag_value:
+                    if tag in self.local_common_dicom_dict:
+                        diff_dict[tag] = update_tag_entry(tag_value, local_tag_value)
+                    elif add_tag:
+                        diff_dict[tag] = add_tag_entry(tag_value)
+            self._header_diff_dict = diff_dict
+
+        return self._header_diff_dict
+
+    @property
+    def safe_to_update(self):
+        """
+        boolean indicating whether the local DICOM files can be safely updated
+            to match the Flywheel info.header.dicom tag values
+        """
+        if not isinstance(self._safe_to_update, bool):
+            valid = True
+            # No local DICOM headers extracted
+            if self.dicom_path_list == self.non_dicom_paths and self.fw_header:
+                warn_str = (
+                    "Despite having info.header.dicom metadata, no dicom header "
+                    "information could be parsed from any files. Metadata will not "
+                    f"be mapped to the following: {self.dicom_path_list}"
+                )
+                self.log.warning(warn_str)
+                valid = False
+
+            # No common tags (multiple series)
+            elif not self.local_common_dicom_dict:
+                warn_str = (
+                    f"These {len(self.dicom_path_list)} DICOMs do not share common "
+                    "public DICOM tag values and are unlikely to belong to the "
+                    "same series. info.header.dicom metadata will not be mapped "
+                    f"to these files: {self.dicom_path_list}"
+                )
+                self.log.warning(warn_str)
+                valid = False
+
+            # Majority of common tags are to be edited (wrong file)
+            elif len(self.header_diff_dict) > (len(self.local_common_dicom_dict) / 3):
+                warn_str = (
+                    f"{len(self.header_diff_dict)} of the info.header.dicom tags "
+                    "are absent or differ from the local dicom file(s) when "
+                    f"{len(self.local_common_dicom_dict)} DICOM tags share "
+                    "the same value across the DICOM series. This indicates "
+                    "that info.header.dicom does not match the current DICOM(s)"
+                    "DICOM(s) will not be edited to match info.header.dicom. "
+                )
+                self.log.warning(warn_str)
+                valid = False
+            self._safe_to_update = valid
+        return self._safe_to_update
+
+    @property
+    def update_dict(self):
+        if self.safe_to_update and not isinstance(self._update_dict, dict):
+            if self.header_diff_dict:
+                info_str = f"Differing DICOM tags:\n {pformat(self.header_diff_dict)}"
+
+                self.log.debug(info_str)
+                update_dict = {k: v.fw_value for k, v in self.header_diff_dict.items()}
+                # Remove OF, SQ, UI VR tags
+                exclude_vr_tags = {
+                    k: update_dict.pop(k)
+                    for k in update_dict
+                    if dictionary_VR(k) in self.exclude_vrs
+                }
+                if exclude_vr_tags:
+                    warn_str = (
+                        f"{len(exclude_vr_tags)} DICOM tags have VRs {self.exclude_vrs} "
+                        "for which editing is not supported. The values for the "
+                        "following tags will not be edited despite info.header.dicom"
+                        f" and local values differing: {pformat(exclude_vr_tags)}"
+                    )
+                    self.log.warning(warn_str)
+                if update_dict:
+                    self._update_dict = update_dict
+                else:
+                    self.log.info("No DICOM tags to update!")
+        return self._update_dict
+
+    def update_dicoms(self):
+        """Update files with public DICOM tags to match self.fw_header"""
+        if self.update_dict:
+            dicom_paths = [dcm["path"] for dcm in self.local_common_dicom_dict]
+            updated_paths = [edit_dicom(path, self.update_dict) for path in dicom_paths]
+            if all(updated_paths):
+                info_str = f"Successfully updated {len(updated_paths)} DICOMs"
+                self.log.info(info_str)
+                return updated_paths
+            else:
+                failed_list = list({dicom_paths} - {updated_paths})
+                warn_str = f"Failed to update {len(failed_list)} DICOMs: {failed_list}"
+                self.log.warning(warn_str)
+
+    @staticmethod
+    def replace_archive(file_directory_path, file_list, archive_path):
+        # Remove the original if it exists
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
+        with zipfile.ZipFile(
+            archive_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+        ) as zipf:
+            for path in file_list:
+                zipf.write(path, os.path.relpath(path, file_directory_path))
+        return archive_path
+
+    @classmethod
+    def update_dicom_archive(cls, archive_path, fw_header, files_log):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with zipfile.ZipFile(archive_path) as zipf:
+                extracted_files = [
+                    os.path.join(temp_dir, rel_path.filename)
+                    for rel_path in zipf.infolist()
+                    if not rel_path.is_dir()
+                ]
+                zipf.extractall(temp_dir)
+            updater = cls(extracted_files, fw_header, files_log)
+            res = updater.update_dicoms()
+            if not res:
+                return None
+            else:
+                return cls.replace_archive(temp_dir, extracted_files, archive_path)
+
+    @classmethod
+    def update_fw_download(cls, download_path, fw_header, files_log):
+        if zipfile.is_zipfile(download_path):
+            return cls.update_dicom_archive(download_path, fw_header, files_log)
+        else:
+            updater = cls([download_path], fw_header, files_log)
+            return updater.update_dicoms()
