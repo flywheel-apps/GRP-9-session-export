@@ -188,9 +188,12 @@ class DicomUpdater:
     def local_common_dicom_dict(self):
         """dict with local DICOM tags that share the same value across all files."""
         if not isinstance(self._local_common_dicom_dict, dict):
-            self._local_common_dicom_dict = get_dict_list_common_dict(
+            common_dict = get_dict_list_common_dict(
                 self.dicom_dict_list
             )
+            # Remove non-dicom tags such as path for list of 1 file
+            common_dict = {k: v for k, v in common_dict.items() if k in keyword_dict}
+            self._local_common_dicom_dict = common_dict
         return self._local_common_dicom_dict
 
     @property
@@ -271,7 +274,7 @@ class DicomUpdater:
 
     @property
     def update_dict(self):
-        if self.safe_to_update and not isinstance(self._update_dict, dict):
+        if not isinstance(self._update_dict, dict):
             if self.header_diff_dict:
                 info_str = f"Differing DICOM tags:\n {pformat(self.header_diff_dict)}"
 
@@ -291,25 +294,27 @@ class DicomUpdater:
                         f" and local values differing: {pformat(exclude_vr_tags)}"
                     )
                     self.log.warning(warn_str)
-                if update_dict:
-                    self._update_dict = update_dict
-                else:
-                    self.log.info("No DICOM tags to update!")
+                self._update_dict = update_dict
+
         return self._update_dict
 
     def update_dicoms(self):
         """Update files with public DICOM tags to match self.fw_header"""
-        if self.update_dict:
-            dicom_paths = [dcm["path"] for dcm in self.local_common_dicom_dict]
-            updated_paths = [edit_dicom(path, self.update_dict) for path in dicom_paths]
-            if all(updated_paths):
-                info_str = f"Successfully updated {len(updated_paths)} DICOMs"
-                self.log.info(info_str)
-                return updated_paths
+        if self.safe_to_update:
+            dicom_paths = [dcm["path"] for dcm in self.dicom_dict_list]
+            if self.update_dict:
+                updated_paths = [edit_dicom(path, self.update_dict) for path in dicom_paths]
+                if all(updated_paths):
+                    info_str = f"Successfully updated {len(updated_paths)} DICOMs"
+                    self.log.info(info_str)
+                    return updated_paths
+                else:
+                    failed_list = list({dicom_paths} - {updated_paths})
+                    warn_str = f"Failed to update {len(failed_list)} DICOMs: {failed_list}"
+                    self.log.warning(warn_str)
             else:
-                failed_list = list({dicom_paths} - {updated_paths})
-                warn_str = f"Failed to update {len(failed_list)} DICOMs: {failed_list}"
-                self.log.warning(warn_str)
+                self.log.info("No DICOM tags to update!")
+                return dicom_paths
 
     @staticmethod
     def replace_archive(file_directory_path, file_list, archive_path):

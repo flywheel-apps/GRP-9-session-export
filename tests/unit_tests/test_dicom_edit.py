@@ -36,19 +36,18 @@ def test_edit_dicom():
 
 
 def test_dicom_list_updater_no_difference(caplog):
+    caplog.set_level(logging.DEBUG)
     dcm_path = get_testdata_files("MR_small.dcm")[0]
     dcm = pydicom.dcmread(dcm_path)
     header = get_pydicom_header(dcm)
-    exp_header = header.copy()
-    exp_header["path"] = dcm_path
-    dcm_updater = DicomUpdater([dcm_path], header, caplog)
-    assert exp_header == dcm_updater.local_common_dicom_dict
+    dcm_updater = DicomUpdater([dcm_path], header, files_log=logging.getLogger("test"))
+    assert header == dcm_updater.local_common_dicom_dict
     assert dcm_updater.safe_to_update
     assert not any(
         [
             dcm_updater.update_dict,
             dcm_updater.header_diff_dict,
-            dcm_updater.update_dicoms(),
             dcm_updater.non_dicom_paths,
         ]
     )
+    assert dcm_updater.update_dicoms() == [dcm_path]
