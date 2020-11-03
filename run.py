@@ -1210,6 +1210,10 @@ if __name__ == "__main__":
             level = logging.INFO
         logging.basicConfig(level=level)
         log.info("{}".format(context.config))
-        return_code = new_main(context)
+        if context.config.get("cleanup"):
+            return_code = 0
+            main(context)
+        else:
+            return_code = new_main(context)
         log.info("DONE!")
         os._exit(return_code)

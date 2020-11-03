@@ -48,6 +48,11 @@
       "description": "Turn on debug logger. Default=True",
       "default": true
     },
+    "cleanup": {
+      "type": "boolean",
+      "description": "In the event of an error, this option will remove all created containers. Default=True",
+      "default": false
+    },
     "export_attachments": {
       "type": "boolean",
       "description": "Export files attached to the container being exported (i.e. session or subject files)",
