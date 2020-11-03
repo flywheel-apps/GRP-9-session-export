@@ -1052,7 +1052,7 @@ def main(context):
             export_session.add_tag(tag)
 
         # Copy over files from old session to new session
-        if context.config["export_session_attachments"]:
+        if context.config.get("export_session_attachments") or context.config.get("export_attachments"):
             _copy_files_from_session(fw, session, export_session)
 
         ########################################################################
