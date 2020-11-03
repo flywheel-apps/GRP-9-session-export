@@ -48,9 +48,9 @@
       "description": "Turn on debug logger. Default=True",
       "default": true
     },
-    "cleanup": {
+    "legacy": {
       "type": "boolean",
-      "description": "In the event of an error, this option will remove all created containers. Default=True",
+      "description": "In the event of an error, this option will remove all created containers. Default=False",
       "default": false
     },
     "export_attachments": {
