@@ -1170,7 +1170,7 @@ def main(context):
     except Exception:
         # Something failed - so we cleanup the session
         log.exception("ERRORS DETECTED!")
-        if context.config.get("cleanup"):
+        if context.config.get("cleanup") or context.config.get("legacy"):
             log.info("CLEANING UP...")
             _cleanup(fw, creatio)
         os._exit(1)

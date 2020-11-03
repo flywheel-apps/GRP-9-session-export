@@ -150,11 +150,10 @@ def get_destination(fw, dest_id, errors=[]):
     """
     # Destination will be analysis since this is a gear run.
     #   Find parent to get export destination container
-    if dest_id != "aex":
-        dest_analysis = fw.get_analysis(dest_id)
-        dest_container = fw.get(dest_analysis.parent.id)
-    else:
-        dest_container = fw.get_subject("5e948782a38034010ce63ac6")
+
+    dest_analysis = fw.get_analysis(dest_id)
+    dest_container = fw.get(dest_analysis.parent.id)
+
     log.debug(f"Found destination container id {dest_container.id}")
 
     if dest_container.container_type not in ["session", "subject"]:
