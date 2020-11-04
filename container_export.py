@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import tempfile
-import zipfile
 
 from copy import deepcopy
 from pprint import pformat
@@ -18,10 +17,9 @@ from util import (
     get_sanitized_filename,
     false_if_exc_is_timeout,
     false_if_exc_timeout_or_sub_exists,
-    get_dict_list_common_dict,
 )
 
-from dicom_metadata import get_compatible_fw_header, get_header_dict_list
+from dicom_metadata import get_compatible_fw_header
 from dicom_edit import DicomUpdater
 from validate import validate_context
 from export_log import ExportLog
@@ -85,7 +83,7 @@ class ContainerExporter:
             gear_context (flywheel.GearContext):
 
         Returns:
-            GRP9Exporter
+            ContainerExporter
         """
         return cls(*validate_context(gear_context), gear_context)
 
@@ -100,8 +98,8 @@ class ContainerExporter:
         return self._origin_parent_id
 
     @property
-    @property
     def log(self):
+        """Logger to use"""
         if not self._log:
             log_msg = f"GRP-9 {self.container_type.capitalize()} {self.origin_container.label} Export"
             self._log = logging.getLogger(log_msg)
@@ -109,6 +107,7 @@ class ContainerExporter:
 
     @property
     def csv_path(self):
+        """Path to which to save the csv record of exported containers"""
         subject_label = (
             self.origin_hierarchy.subject.label or self.origin_hierarchy.subject.code
         )
@@ -274,11 +273,24 @@ class ContainerExporter:
     def export_container_files(
         fw_client, origin_container, export_container, dicom_map
     ):
+        """
+        Export origin_container.files to export_container
+        Args:
+            fw_client (flywheel.Client): the flywheel client
+            origin_container (ContainerBase): parent container with files to export
+            export_container: container to which to copy origin_container's files
+            dicom_map (dict or None): dictionary to use for mapping Flywheel
+                attributes to DICOM file header tags
+
+        Returns:
+            tuple(list, list, list) tuple of lists of found files, created files,
+                and files that failed to export
+        """
         found = list()
         created = list()
         failed = list()
         for ifile in origin_container.files:
-            file_exporter = FileExportRecord(fw_client, ifile, dicom_map)
+            file_exporter = FileExporter(fw_client, ifile, dicom_map)
             exported_name, file_created = file_exporter.find_or_create_file_copy(
                 export_container
             )
@@ -299,10 +311,17 @@ class ContainerExporter:
         export_attachments=False,
         export_hierarchy=None,
     ):
-        if not export_hierarchy:
-            export_hierarchy = ExportHierarchy.from_container(
-                self.fw_client, origin_container
-            )
+        """
+        Export origin_container to self.export_project
+        Args:
+            origin_container (ContainerBase): container to export
+            export_parent (ContainerBase): parent container to which to copy origin_container
+            export_attachments (bool): whether to export origin_container's file attachments
+            export_hierarchy (ExportHierarchy): ExportHierarchy for origin_container
+
+        Returns:
+            copy of the origin_copy on export_parent
+        """
         container_label = origin_container.get("label", origin_container.get("code"))
         log_msg_str = (
             f"{export_hierarchy.container_type} {container_label} "
@@ -340,18 +359,13 @@ class ContainerExporter:
         return c_copy, created
 
     def export(self):
+        """Perform GRP-9 export of self.origin_container"""
         export_attachments = self.config.get("export_attachments")
-        (
-            origin_subject,
-            subject_export_hierarchy,
-            sessions,
-        ) = self.get_subject_export_params()
-        subject_copy, created = self.export_container(
-            origin_subject,
-            self.export_project,
-            export_attachments=export_attachments,
-            export_hierarchy=subject_export_hierarchy,
-        )
+        export_params = self.get_subject_export_params()
+        subject_export_hierarchy = export_params[-1]
+        origin_subject = export_params[0]
+        subject_copy, created = self.export_container(*export_params)
+        sessions = self.get_origin_sessions()
         export_success = True
         for session in sessions:
             session = session.reload()
@@ -387,61 +401,95 @@ class ContainerExporter:
                 )
                 export_success = False
                 continue
+
         if any(x.failed_files for x in self.export_log.records):
             export_success = False
 
+        # write the log csv
         if export_success and self.archive_project:
-            self.archive()
+            self.archive(origin_subject, sessions)
             self.export_log.write_csv(self.csv_path, self.export_log.archive_path)
         else:
             self.export_log.write_csv(self.csv_path)
-        if export_success:
-            return 0
-        else:
-            return 1
+        return int(export_success)
 
     def get_subject_export_params(self):
+        """
+        Get the parameters to provide to the self.export_container method for
+            the subject within self.export
+        Returns:
+            tuple(ContainerBase, flywheel.Project, bool, ExportHierarchy): the
+                parameters to provide to self.export container within self.export
+
+        """
         if self.container_type == "subject":
             origin_subject = self.origin_container.reload()
             subject_export_hierarchy = self.origin_hierarchy
-            sessions = self.origin_container.sessions.iter()
+            export_attachments = self.config.get("export_attachments")
         else:
             origin_subject = self.origin_container.subject.reload()
             subject_export_hierarchy = self.origin_hierarchy.get_parent_hierarchy()
-            sessions = [self.origin_container.reload()]
-        return origin_subject, subject_export_hierarchy, sessions
+            export_attachments = False
+        return (
+            origin_subject,
+            self.export_project,
+            export_attachments,
+            subject_export_hierarchy,
+        )
 
-    def archive(self):
-        def move_sessions(archive_subject, sessions):
-            for session in sessions:
-                session.update({"subject": {"_id": archive_subject.id}})
+    def get_origin_sessions(self):
+        """
+        Get sessions iterator to be used within self.export()
+
+        Returns:
+            list or generator: iterator of the sessions to export
+
+        """
+        if hasattr(self.origin_container, "sessions"):
+            sessions = self.origin_container.sessions.iter()
+        else:
+            sessions = [self.origin_container.reload()]
+        return sessions
+
+    def archive(self, subject, sessions):
+        """
+        If an archive_project was set, move self.origin_container to it.
+            If self.container_type is subject, move the subject if one doesn't
+            already exist in archive_project, otherwise move sessions to
+            a copy of the subject in archive_project
+
+        Args:
+            subject (flywheel.Subject): the origin subject
+            sessions (list or generator): the origin sessions
+
+        """
+
+        def move_sessions(dest_subject, session_list):
+            """move sessions in session_list to dest_subject"""
+            for session in session_list:
+                session.update({"subject": {"_id": dest_subject.id}})
 
         if self.archive_project:
 
-            origin_subject, _, sessions = self.get_subject_export_params()
-
-            found_subject = self.find_container_copy(
-                origin_subject, self.archive_project
-            )
+            found_subject = self.find_container_copy(subject, self.archive_project)
             if self.container_type == "subject":
                 if not found_subject:
-                    origin_subject.update(project=self.archive_project.id)
+                    subject.update(project=self.archive_project.id)
                 else:
                     move_sessions(found_subject, sessions)
             else:
                 archive_subject, created = self.find_or_create_container_copy(
-                    origin_subject, sessions
+                    subject, sessions
                 )
                 move_sessions(archive_subject, sessions)
 
 
-class FileExportRecord:
+class FileExporter:
     def __init__(self, fw_client, file_entry, dicom_map=None):
         """
-
         Args:
             fw_client (flywheel.Client): the flywheel client
-            file_entry (flywheel.FileEntry):
+            file_entry (flywheel.FileEntry): the file to export
         """
         self.sanitized_name = get_sanitized_filename(file_entry.name)
         self.origin_file = file_entry
@@ -488,6 +536,7 @@ class FileExportRecord:
 
     @property
     def log(self):
+        """The log to use for the FileExport instance"""
         if self._log is None:
             self._log = logging.getLogger(f"{self.sanitized_name}")
         return self._log
@@ -558,6 +607,17 @@ class FileExportRecord:
         return schema
 
     def find_file_copy(self, export_parent):
+        """
+        Find and return a copy of self.origin_file from export_parent container
+            (if a copy exists), else return None
+
+        Args:
+            export_parent (ContainerBase): the container on which to locate a
+                copy of self.origin_file (has a matching origin_id and filename)
+
+        Returns:
+            flywheel.FileEntry or None (if not found)
+        """
         for file_entry in export_parent.files:
             file_origin_id = file_entry.info.get("export", {}).get("origin_id")
             if self.origin_id == file_origin_id and file_entry.name in [
@@ -574,6 +634,16 @@ class FileExportRecord:
         jitter=backoff.full_jitter,
     )
     def create_file_copy(self, export_parent):
+        """
+
+        Args:
+            export_parent (ContainerBase): the container on which to create
+               a copy of self.origin_file
+
+        Returns:
+            str or None: name of the created copy of FileEntry or None if
+                creation of copy was unsuccessful
+        """
         with tempfile.TemporaryDirectory() as tempdir:
             local_filepath = self.download(tempdir)
             if self.type == "dicom":
@@ -585,6 +655,18 @@ class FileExportRecord:
             return self.sanitized_name
 
     def find_or_create_file_copy(self, export_parent):
+        """
+        Find or create a copy of self.origin_file on export parent and return the
+            name of the found/created copy and a boolean indicating if it was
+            created. Failed creation returns None instead of a name str
+        Args:
+            export_parent (ContainerBase): the container on which to locate/create
+               a copy of  self.origin_file
+
+        Returns: tuple((str or None), bool): the name of the found or created
+            copy of self.origin_file and whether the copy was created
+
+        """
         file_copy = self.find_file_copy(export_parent)
         file_name = None
         created = False
@@ -601,6 +683,17 @@ class FileExportRecord:
         return file_name, created
 
     def update_dicom(self, local_filepath):
+        """
+        Update the DICOM located at local_filepath to match self.fw_dicom_header
+
+        Args:
+            local_filepath (str): path to the DICOM to update
+
+        Returns:
+            str or None: local_filepath if update was successful, otherwise
+                None
+
+        """
         if not self.fw_dicom_header:
             warn_str = (
                 "Flywheel DICOM does not have a header at info.header.dicom to "
@@ -617,9 +710,7 @@ class FileExportRecord:
 
                 self.log.warning(warn_str)
             return local_filepath
-        return DicomUpdater.update_fw_dicom(
-            local_filepath, self.fw_dicom_header
-        )
+        return DicomUpdater.update_fw_dicom(local_filepath, self.fw_dicom_header)
 
     def download(self, download_dirpath):
         """
@@ -710,26 +801,6 @@ class FileExportRecord:
                     classification_copy.pop(key)
 
         return classification_copy
-
-
-class GRP9Exporter:
-    def __init__(self, export_project, archive_project, origin_container, gear_context):
-        self.export_project = export_project
-        self.archive_project = archive_project
-        self.origin_container = origin_container
-        self.context = gear_context
-
-    @classmethod
-    def from_gear_context(cls, gear_context):
-        """
-        Instantiate an Exporter class instance from gear_context
-        Args:
-            gear_context (flywheel.GearContext):
-
-        Returns:
-            GRP9Exporter
-        """
-        return cls(*validate_context(gear_context), gear_context)
 
 
 class ExportHierarchy:
