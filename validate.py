@@ -18,7 +18,7 @@ def false_if_exc_is_not_found_or_forbidden(exception):
 # many things as possible rather than raising immediately so that users are
 # informed of all problems and don't have to iteratively resolve them
 # also, we'll support subject-level export
-def validate_context(gc, exc_info=True):
+def validate_context(gc):
     """
     Validates the gear_context, and export/archive project states to determine
         if the gear can be executed as configured.
@@ -47,25 +47,24 @@ def validate_context(gc, exc_info=True):
         try:
             export_project = get_project(fw, gc.config.get("export_project"))
         except flywheel.rest.ApiException:
-            if exc_info:
-                log.error(
-                    f"Could not find export project {gc.config.get('export_project')}"
-                )
+            log.error(
+                f"Could not find export project {gc.config.get('export_project')}",
+                exc_info=True,
+            )
             sys.exit(1)
 
     if gc.config.get("archive_project"):
         try:
             archive_project = get_project(fw, gc.config.get("archive_project"))
         except flywheel.rest.ApiException:
-            if exc_info:
-                log.error(
-                    f"Could not find archive project {gc.config.get('export_project')}"
-                )
+            log.error(
+                f"Could not find archive project {gc.config.get('export_project')}",
+                exc_info=True,
+            )
             sys.exit(1)
 
     if export_project is None:
-        if exc_info:
-            log.error("Export project needs to be specified")
+        log.error("Export project needs to be specified", exc_info=True)
         sys.exit(1)
 
     #####
@@ -73,9 +72,8 @@ def validate_context(gc, exc_info=True):
     if gc.config.get("check_gear_rules"):
         rules = validate_gear_rules(fw, export_project)
         if rules:
-            if exc_info:
-                message = f"Aborting Session Export: {export_project.label} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior."
-                log.error(message)
+            message = f"Aborting Session Export: {export_project.label} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior."
+            log.error(message, exc_info=True)
             sys.exit(1)
         else:
             log.info("No enabled rules were found. Moving on...")
@@ -85,12 +83,13 @@ def validate_context(gc, exc_info=True):
     try:
         destination = get_destination(fw, gc.destination.get("id"))
     except flywheel.rest.ApiException:
-        if exc_info:
-            log.error(f"Could not find destination with id {gc.destination.get('id')}")
+        log.error(
+            f"Could not find destination with id {gc.destination.get('id')}",
+            exc_info=True,
+        )
         sys.exit(1)
     except ValueError as e:
-        if exc_info:
-            log.error(e.args[0])
+        log.error(e.args[0], exc_info=True)
         sys.exit(1)
 
     ####
