@@ -274,6 +274,10 @@ class DicomUpdater:
 
     @property
     def update_dict(self):
+        """
+        The dictionary to be provided as input to edit_dicom to make the file(s)
+            consistent with self.fw_header
+        """
         if not isinstance(self._update_dict, dict):
             if self.header_diff_dict:
                 info_str = f"Differing DICOM tags:\n {pformat(self.header_diff_dict)}"
@@ -299,7 +303,12 @@ class DicomUpdater:
         return self._update_dict
 
     def update_dicoms(self):
-        """Update files with public DICOM tags to match self.fw_header"""
+        """
+        Update files with public DICOM tags to match self.fw_header
+
+        Returns:
+            list of paths
+        """
         if self.safe_to_update:
             dicom_paths = [dcm["path"] for dcm in self.dicom_dict_list]
             if self.update_dict:
@@ -312,26 +321,52 @@ class DicomUpdater:
                     failed_list = list({dicom_paths} - {updated_paths})
                     warn_str = f"Failed to update {len(failed_list)} DICOMs: {failed_list}"
                     self.log.warning(warn_str)
+                return updated_paths
             else:
                 self.log.info("No DICOM tags to update!")
                 return dicom_paths
 
     @staticmethod
-    def replace_archive(file_directory_path, file_list, archive_path):
+    def replace_zip_contents(file_directory_path, file_list, zip_path):
+        """
+        Replace the zip at zip_path with a zip of the files in file_list
+        Args:
+            file_directory_path (str): path to the directory containing the files
+                in file_list
+            file_list (list): absolute paths to the files to add to the zip at
+                zip_path
+            zip_path (str): path to the zip to replace
+
+        Returns:
+            path to the replaced zip
+
+        """
         # Remove the original if it exists
-        if os.path.exists(archive_path):
-            os.remove(archive_path)
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
         with zipfile.ZipFile(
-            archive_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+            zip_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True
         ) as zipf:
             for path in file_list:
                 zipf.write(path, os.path.relpath(path, file_directory_path))
-        return archive_path
+        return zip_path
 
     @classmethod
-    def update_dicom_archive(cls, archive_path, fw_header, files_log):
+    def update_dicom_zip(cls, zip_path, fw_header, files_log):
+        """
+        Update the DICOM files within the zip at zip_path to match fw_header
+        Args:
+            zip_path (str): path to the DICOM zip to update
+            fw_header (dict): flywheel's info.header.dicom metadata for the zip
+            files_log (logging.Logger): the log to use for DicomUpdater created
+                for updating the zip DICOM files
+
+        Returns:
+            None or str: path to the updated zip if update was successful,
+                else None
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
-            with zipfile.ZipFile(archive_path) as zipf:
+            with zipfile.ZipFile(zip_path) as zipf:
                 extracted_files = [
                     os.path.join(temp_dir, rel_path.filename)
                     for rel_path in zipf.infolist()
@@ -343,12 +378,29 @@ class DicomUpdater:
             if not res:
                 return None
             else:
-                return cls.replace_archive(temp_dir, extracted_files, archive_path)
+                return cls.replace_zip_contents(temp_dir, extracted_files, zip_path)
 
     @classmethod
-    def update_fw_download(cls, download_path, fw_header, files_log):
-        if zipfile.is_zipfile(download_path):
-            return cls.update_dicom_archive(download_path, fw_header, files_log)
+    def update_fw_dicom(cls, dicom_path, fw_header, files_log):
+        """
+        Update the DICOM file/zip to match fw_header
+        Args:
+            dicom_path (str): path to the DICOM file/zip to update
+            fw_header (dict): flywheel's info.header.dicom metadata for the
+                DICOM file/zip
+            files_log (logging.Logger): the log to use for DicomUpdater created
+                for updating the DICOM file/zip
+
+        Returns:
+             None or str: path to the updated DICOM file/zip if update was
+                successful, else None
+        """
+        if zipfile.is_zipfile(dicom_path):
+            return cls.update_dicom_zip(dicom_path, fw_header, files_log)
         else:
-            updater = cls([download_path], fw_header, files_log)
-            return updater.update_dicoms()
+            updater = cls([dicom_path], fw_header, files_log)
+            updated_list = updater.update_dicoms()
+            if not updated_list:
+                return None
+            else:
+                return updated_list[0]
