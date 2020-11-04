@@ -381,20 +381,19 @@ class DicomUpdater:
                 return cls.replace_zip_contents(temp_dir, extracted_files, zip_path)
 
     @classmethod
-    def update_fw_dicom(cls, dicom_path, fw_header, files_log):
+    def update_fw_dicom(cls, dicom_path, fw_header):
         """
         Update the DICOM file/zip to match fw_header
         Args:
             dicom_path (str): path to the DICOM file/zip to update
             fw_header (dict): flywheel's info.header.dicom metadata for the
                 DICOM file/zip
-            files_log (logging.Logger): the log to use for DicomUpdater created
-                for updating the DICOM file/zip
 
         Returns:
              None or str: path to the updated DICOM file/zip if update was
                 successful, else None
         """
+        files_log = logging.getLogger(os.path.basename(dicom_path))
         if zipfile.is_zipfile(dicom_path):
             return cls.update_dicom_zip(dicom_path, fw_header, files_log)
         else:

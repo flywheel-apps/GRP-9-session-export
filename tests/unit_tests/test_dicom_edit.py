@@ -51,3 +51,7 @@ def test_dicom_list_updater_no_difference(caplog):
         ]
     )
     assert dcm_updater.update_dicoms() == [dcm_path]
+    updated_path = DicomUpdater.update_fw_dicom(dcm_path, header)
+    assert updated_path == dcm_path
+    assert pydicom.dcmread(updated_path) == dcm
+

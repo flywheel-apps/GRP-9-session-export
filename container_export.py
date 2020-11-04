@@ -618,7 +618,7 @@ class FileExportRecord:
                 self.log.warning(warn_str)
             return local_filepath
         return DicomUpdater.update_fw_dicom(
-            local_filepath, self.fw_dicom_header, self.log
+            local_filepath, self.fw_dicom_header
         )
 
     def download(self, download_dirpath):
