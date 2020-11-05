@@ -129,10 +129,10 @@ class ContainerExporter:
             container (ContainerBase): the container for which to retrieve hierarchy
 
         Returns:
-            ExportHierarchy: an object with attributes from container.parents
+            ContainerHierarchy: an object with attributes from container.parents
                 but with the container objects instead of the id string
         """
-        return ExportHierarchy.from_container(self.fw_client, container)
+        return ContainerHierarchy.from_container(self.fw_client, container)
 
     @staticmethod
     def get_create_container_kwargs(origin_container):
@@ -317,7 +317,7 @@ class ContainerExporter:
             origin_container (ContainerBase): container to export
             export_parent (ContainerBase): parent container to which to copy origin_container
             export_attachments (bool): whether to export origin_container's file attachments
-            export_hierarchy (ExportHierarchy): ExportHierarchy for origin_container
+            export_hierarchy (ContainerHierarchy): ExportHierarchy for origin_container
 
         Returns:
             copy of the origin_copy on export_parent
@@ -418,7 +418,7 @@ class ContainerExporter:
         Get the parameters to provide to the self.export_container method for
             the subject within self.export
         Returns:
-            tuple(ContainerBase, flywheel.Project, bool, ExportHierarchy): the
+            tuple(ContainerBase, flywheel.Project, bool, ContainerHierarchy): the
                 parameters to provide to self.export container within self.export
 
         """
@@ -803,7 +803,11 @@ class FileExporter:
         return classification_copy
 
 
-class ExportHierarchy:
+class ContainerHierarchy:
+    """
+    Class that presents access to parent containers represented in the dictionary
+        at container.parents
+    """
     order_tuple = ("acquisition", "session", "subject", "project", "group")
 
     def __init__(self, **kwargs):
@@ -817,7 +821,7 @@ class ExportHierarchy:
         self._path = None
 
     def __deepcopy__(self, memodict={}):
-        return ExportHierarchy(**self.to_dict())
+        return ContainerHierarchy(**self.to_dict())
 
     def __getitem__(self, key):
         return getattr(self, key)
@@ -831,6 +835,16 @@ class ExportHierarchy:
 
     @classmethod
     def from_container(cls, fw_client, container):
+        """
+        Initialize an ContainerHierarchy instance for container
+        Args:
+            fw_client (flywheel.Client): the flywheel client
+            container (ContainerBase): the container for which to initialize
+                a ContainerHierarchy instance
+
+        Returns:
+            ContainerHierarchy
+        """
         init_kwargs = dict()
         for parent_type, parent_id in container.parents.items():
             if parent_id is not None:
@@ -849,6 +863,17 @@ class ExportHierarchy:
         jitter=backoff.full_jitter,
     )
     def _get_container(fw_client, container_type, container_id):
+        """
+        Retrieve the container at container_type using the specific get_<container>
+            method (i.e. get_session)
+        Args:
+            fw_client (flywheel.Client): the flywheel client
+            container_type (str): the container type of the container with container_id
+            container_id (str): the Flywheel id of the container to retrieve
+
+        Returns:
+            ContainerBase: the container with container_id
+        """
         if container_id is None:
             return None
         # get_session, for example
@@ -860,7 +885,7 @@ class ExportHierarchy:
 
     @property
     def container_type(self):
-        """The type of the lowest container in the hierarchy"""
+        """The type of the lowest container in the hierarchy (not None)"""
         for container_type in self.order_tuple:
             container = self.get(container_type)
             if container:
@@ -871,6 +896,10 @@ class ExportHierarchy:
 
     @property
     def parent(self):
+        """
+        The parent container of the container represented by this ContainerHierarchy
+            instance
+        """
         if self.container_type not in ["group", None]:
             parent_container_type_idx = self.order_tuple.index(self.container_type) + 1
             parent_container_type = self.order_tuple[parent_container_type_idx]
@@ -879,7 +908,8 @@ class ExportHierarchy:
     @property
     def dicom_map(self):
         """
-        The dictionary to use for map_flywheel_to_dicom
+        The dictionary to use for map_flywheel_to_dicom, a dictionary with
+            DICOM header tag, DICOM header tag value key-value pairs
         """
         self._dicom_map = self.get_dicom_map_dict(
             self.acquisition, self.session, self.subject
@@ -888,7 +918,10 @@ class ExportHierarchy:
 
     @property
     def path(self):
-        """The flywheel resolver path"""
+        """
+        The flywheel resolver path for the container represented by this
+            ContainerHierarchy instance (i.e group/project/subject/session/acquisition)
+        """
         if self._path is None:
             containers = (
                 self.group,
@@ -920,12 +953,12 @@ class ExportHierarchy:
             dicom_map_dict["SeriesDescription"] = acquisition.label
         if session:
             dicom_map_dict["PatientWeight"] = session.get("weight", "")
-            dicom_map_dict["PatientAge"] = ExportHierarchy.get_patientage_from_session(
+            dicom_map_dict["PatientAge"] = ContainerHierarchy.get_patientage_from_session(
                 session
             )
             dicom_map_dict["StudyID"] = session.label
         if subject:
-            dicom_map_dict["PatientSex"] = ExportHierarchy.get_patientsex_from_subject(
+            dicom_map_dict["PatientSex"] = ContainerHierarchy.get_patientsex_from_subject(
                 subject
             )
             dicom_map_dict["PatientID"] = subject.label or subject.code
@@ -978,23 +1011,25 @@ class ExportHierarchy:
         return getattr(self, key, None)
 
     def get_child_hierarchy(self, child_container):
+        """Return ContainerHierarchy for the child container"""
         hierarchy_dict = self.to_dict()
         hierarchy_dict[child_container.container_type] = child_container
-        return ExportHierarchy.from_dict(hierarchy_dict)
+        return ContainerHierarchy.from_dict(hierarchy_dict)
 
     def get_parent_hierarchy(self):
+        """Get an ContainerHierarchy instance for self.parent"""
         hierarchy_dict = self.to_dict()
-        hierarchy_dict.pop(self.container_type)
-        return ExportHierarchy.from_dict(hierarchy_dict)
+        return ContainerHierarchy.from_dict(hierarchy_dict)
 
     def to_dict(self):
         """
         Returns:
-            dict: a dictionary representation of the instance
+            dict: a dictionary representation of the ContainerHierarchy instance
         """
         return vars(self)
 
     @classmethod
     def from_dict(cls, hierarchy_dict):
+        """Initialize an ContainerHierarchy instance from a dictionary representation"""
         kwargs = {k: v for k, v in hierarchy_dict.items() if k in cls.order_tuple}
         return cls(**kwargs)
