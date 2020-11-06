@@ -181,3 +181,52 @@ class TestContainerExporter:
 
         assert queries == label
 
+    @pytest.mark.parametrize("same", [True, False])
+    @pytest.mark.parametrize(
+        "origin,export,parent,par_type",
+        [
+            (
+                flywheel.Session(id="test"),
+                flywheel.Session(
+                    id="test2", info={"export": {"origin_id": hash_value("test")}}
+                ),
+                MagicMock(spec=dir(flywheel.Subject).extend("sessions")),
+                "subject",
+            ),
+            (
+                flywheel.Subject(label="test"),
+                flywheel.Subject(label="test"),
+                MagicMock(spec=dir(flywheel.Project).extend("subjects")),
+                "project",
+            ),
+        ],
+    )
+    def test_find_container_copy(self, origin, export, parent, mocker, par_type, same):
+        parent.container_type = par_type
+        parent.id = "test_parent"
+        export.parents = flywheel.ContainerParents(**{par_type: parent.id})
+        origin.parents = flywheel.ContainerParents(
+            **{par_type: parent.id if same else "test_parent2"}
+        )
+
+        finder_mock = getattr(parent, f"{export.container_type}s").find_first
+        finder_mock.return_value = export
+
+        out = ContainerExporter.find_container_copy(origin, parent)
+        if not same:
+            if par_type == "project":
+                finder_mock.assert_called_once_with("label=test")
+            else:
+                finder_mock.assert_called_once_with(
+                    f"info.export.origin_id={hash_value('test')}"
+                )
+        else:
+            assert out == origin
+
+    @pytest.mark.parametrize(
+        "origin,parent",
+        [(flywheel.Session(id="test"), MagicMock(spec=dir(flywheel.Subject)))],
+    )
+    def test_create_container_copy(self, origin, parent):
+        ContainerExporter.create_container_copy(origin, parent)
+
