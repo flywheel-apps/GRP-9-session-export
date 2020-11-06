@@ -70,9 +70,6 @@ class ContainerExporter:
         self.container_type = origin_container.container_type
         self.export_log = ExportLog(export_project, archive_project)
         self.status = None
-        self._create_container_kwargs = None
-        self._container_copy_find_queries = None
-        self._origin_parent_id = None
         self._log = None
 
     @classmethod
@@ -86,16 +83,6 @@ class ContainerExporter:
             ContainerExporter
         """
         return cls(*validate_context(gear_context), gear_context)
-
-    @property
-    def origin_parent_id(self):
-        """The id of self.origin_container's parent"""
-        for parent_type, parent_id in self.origin_container.parents.items():
-            if self.origin_container.get(parent_type) == parent_id:
-                self._origin_parent_id = parent_id
-                break
-
-        return self._origin_parent_id
 
     @property
     def log(self):
@@ -148,7 +135,9 @@ class ContainerExporter:
             origin_container_key_value = origin_container.get(key)
             if origin_container_key_value not in [None, {}, []]:
                 create_container_kwargs[key] = origin_container_key_value
-        create_container_kwargs["info"] = deepcopy(origin_container.info)
+        create_container_kwargs["info"] = (
+            deepcopy(origin_container.info) if origin_container.info else {}
+        )
         create_container_kwargs["info"]["export"] = {
             "origin_id": hash_value(origin_container.id)
         }
@@ -227,9 +216,10 @@ class ContainerExporter:
         create_kwargs = ContainerExporter.get_create_container_kwargs(origin_container)
         created_container = create_container_func(**create_kwargs)
         # tags must be added using the add_tag method
-        for tag in origin_container.tags:
-            if tag not in EXCLUDE_TAGS:
-                created_container.add_tag(tag)
+        if origin_container.tags:
+            for tag in origin_container.tags:
+                if tag not in EXCLUDE_TAGS:
+                    created_container.add_tag(tag)
 
         return created_container
 
@@ -808,6 +798,7 @@ class ContainerHierarchy:
     Class that presents access to parent containers represented in the dictionary
         at container.parents
     """
+
     order_tuple = ("acquisition", "session", "subject", "project", "group")
 
     def __init__(self, **kwargs):
@@ -953,14 +944,14 @@ class ContainerHierarchy:
             dicom_map_dict["SeriesDescription"] = acquisition.label
         if session:
             dicom_map_dict["PatientWeight"] = session.get("weight", "")
-            dicom_map_dict["PatientAge"] = ContainerHierarchy.get_patientage_from_session(
-                session
-            )
+            dicom_map_dict[
+                "PatientAge"
+            ] = ContainerHierarchy.get_patientage_from_session(session)
             dicom_map_dict["StudyID"] = session.label
         if subject:
-            dicom_map_dict["PatientSex"] = ContainerHierarchy.get_patientsex_from_subject(
-                subject
-            )
+            dicom_map_dict[
+                "PatientSex"
+            ] = ContainerHierarchy.get_patientsex_from_subject(subject)
             dicom_map_dict["PatientID"] = subject.label or subject.code
         return dicom_map_dict
 
