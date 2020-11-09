@@ -279,12 +279,6 @@ class TestContainerExporter:
         assert created == ["0", "6"]
         assert found == ["2", "4", "8"]
 
-    def test_export_container(self, mocker, container_export, caplog):
-        export, mocks = container_export(
-            "test", "test", flywheel.Session(label="test"), mock=True
-        )
-
-        exported = export.export_container(flywheel.Session(label="test"))
 
     @pytest.mark.parametrize(
         "container",
