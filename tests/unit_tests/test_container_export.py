@@ -314,6 +314,25 @@ class TestContainerExporter:
 
         assert mocks["hierarchy"].call_count == 1
 
+    @pytest.mark.parametrize('origin,ctype',[
+        (MagicMock(spec=dir(flywheel.Session)),'session'),
+        (MagicMock(spec=(dir(flywheel.Subject)+['sessions'])),'subject')
+        ])
+    def test_get_origin_sessions(self, container_export, origin, ctype):
+        origin.container_type = ctype
+        if ctype == 'subject':
+            origin.sessions.iter.return_value = ['1','2','3']
+        else:
+            origin.reload.return_value = origin
+        container_ex,mocks = container_export('test','test',origin,mock=True)
 
-# def test_get_origin_sessions(self)
+        sess = container_ex.get_origin_sessions()
+
+        if ctype == 'subject':
+            assert sess == ['1','2','3']
+        else:
+            assert sess == [origin]
+
+
+
 
