@@ -4,6 +4,8 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+pytest-cov = "*"
+pytest-mock = "*"
 
 [packages]
 jsonschema = "~=3.2.0"
@@ -15,6 +17,7 @@ pytz = "~=2019.3"
 tzlocal = "~=2.0.0"
 backoff = "~=1.10.0"
 pathvalidate = "~=2.3.0"
+flywheel-gear-toolkit = "*"
 
 [requires]
 python_version = "3.8"
