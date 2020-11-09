@@ -43,7 +43,7 @@ def container_export(sdk_mock, mocker):
 
 
 @pytest.fixture
-def container_gen():
+def c():
     def gen(c_type, **kwargs):
         constructor = getattr(flywheel, c_type)
         return constructor(**kwargs)
@@ -153,10 +153,8 @@ class TestContainerExporter:
     @pytest.mark.parametrize(
         "ctype,other", [("Session", {"age": "10"}), ("Subject", {"sex": "F"})]
     )
-    def test_get_create_container_kwargs(
-        self, mocker, container_gen, info, ctype, other
-    ):
-        container = container_gen(ctype, id="test", info=info, **other)
+    def test_get_create_container_kwargs(self, mocker, c, info, ctype, other):
+        container = c(ctype, id="test", info=info, **other)
         out = ContainerExporter.get_create_container_kwargs(container)
 
         assert all([key in out for key in other.keys()])
@@ -225,8 +223,97 @@ class TestContainerExporter:
 
     @pytest.mark.parametrize(
         "origin,parent",
-        [(flywheel.Session(id="test"), MagicMock(spec=dir(flywheel.Subject)))],
+        [
+            (flywheel.Session(id="test"), MagicMock(spec=dir(flywheel.Subject))),
+            (
+                flywheel.Session(id="test", tags=["test", "one"]),
+                MagicMock(spec=dir(flywheel.Subject)),
+            ),
+        ],
     )
     def test_create_container_copy(self, origin, parent):
-        ContainerExporter.create_container_copy(origin, parent)
+        add_mock = getattr(parent, f"add_{origin.container_type}")
+        add_mock.return_value = origin
+        out = ContainerExporter.create_container_copy(origin, parent)
+        assert out.label == origin.label
+        assert out.tags == origin.tags
+
+    @pytest.mark.parametrize("found", [None, flywheel.Subject(label="test")])
+    def test_find_or_create_container_copy(self, mocker, found):
+        find_mock = mocker.patch(
+            "container_export.ContainerExporter.find_container_copy"
+        )
+        find_mock.return_value = found
+        create_mock = mocker.patch(
+            "container_export.ContainerExporter.create_container_copy"
+        )
+        create_mock.return_value = flywheel.Subject(label="test2")
+        container, created = ContainerExporter.find_or_create_container_copy(
+            "test", "test"
+        )
+
+        assert created == (found is None)
+        assert (
+            container == flywheel.Subject(label="test")
+            if not found is None
+            else flywheel.Subject(label="test2")
+        )
+
+    @pytest.mark.parametrize("base", [flywheel.Subject, flywheel.Session])
+    def test_export_container_files(self, sdk_mock, mocker, base):
+
+        exporter_mock = mocker.patch("container_export.FileExporter")
+        origin = base(files=[])
+        side_effect = []
+        for i in range(10):
+            origin.files.append(flywheel.FileEntry(name=str(i)))
+            side_effect.append(
+                (str(i) if i % 2 == 0 else None, True if i % 3 == 0 else False)
+            )
+        exporter_mock.return_value.find_or_create_file_copy.side_effect = side_effect
+
+        found, created, failed = ContainerExporter.export_container_files(
+            sdk_mock, origin, "other", "test"
+        )
+        assert failed == ["1", "3", "5", "7", "9"]
+        assert created == ["0", "6"]
+        assert found == ["2", "4", "8"]
+
+    def test_export_container(self, mocker, container_export, caplog):
+        export, mocks = container_export(
+            "test", "test", flywheel.Session(label="test"), mock=True
+        )
+
+        exported = export.export_container(flywheel.Session(label="test"))
+
+    @pytest.mark.parametrize(
+        "container",
+        [
+            flywheel.Subject(label="test"),
+            flywheel.Session(label="test", subject=flywheel.Subject(label="test")),
+        ],
+    )
+    def test_get_subject_export_params(self, mocker, container_export, container):
+        if container.container_type == "subject":
+            cont_mock = mocker.patch.object(container, "reload")
+            cont_mock.return_value = "mocked"
+        else:
+            cont_mock = mocker.patch.object(container.subject, "reload")
+            cont_mock.return_value = "mocked"
+
+        export, mocks = container_export("test", "test", container, mock=True)
+
+        orig, proj, att, hier = export.get_subject_export_params()
+
+        assert orig == "mocked"
+        assert proj == "test"
+        if container.container_type == "subject":
+            assert att == None
+        else:
+            assert att == False
+
+        assert mocks["hierarchy"].call_count == 1
+
+
+# def test_get_origin_sessions(self)
 
