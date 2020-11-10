@@ -814,17 +814,7 @@ class ContainerHierarchy:
         self._path = None
 
     def __deepcopy__(self, memodict={}):
-        return ContainerHierarchy(**self.to_dict())
-
-    def __getitem__(self, key):
-        return getattr(self, key)
-
-    def __setitem__(self, key, value):
-        setattr(self, key, value)
-
-    def __delitem__(self, key):
-        if hasattr(self, key):
-            delattr(self, key)
+        return ContainerHierarchy.from_dict(self.to_dict())
 
     @classmethod
     def from_container(cls, fw_client, container):
@@ -917,13 +907,13 @@ class ContainerHierarchy:
         """
         if self._path is None:
             containers = (
-                self.group,
                 self.project,
                 self.subject,
                 self.session,
                 self.acquisition,
             )
-            labels = [(c.label or c.get("code")) for c in containers if c is not None]
+            labels = [self.group.id]
+            labels.extend([(c.label or c.get("code")) for c in containers if c is not None])
             if labels:
                 self._path = "/".join(labels)
         return self._path
@@ -1012,6 +1002,7 @@ class ContainerHierarchy:
     def get_parent_hierarchy(self):
         """Get an ContainerHierarchy instance for self.parent"""
         hierarchy_dict = self.to_dict()
+        hierarchy_dict.pop(self._container_type)
         return ContainerHierarchy.from_dict(hierarchy_dict)
 
     def to_dict(self):
@@ -1019,7 +1010,7 @@ class ContainerHierarchy:
         Returns:
             dict: a dictionary representation of the ContainerHierarchy instance
         """
-        return vars(self)
+        return vars(self).copy()
 
     @classmethod
     def from_dict(cls, hierarchy_dict):

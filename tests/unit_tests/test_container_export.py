@@ -1,6 +1,7 @@
 import flywheel
 import flywheel_gear_toolkit
 from contextlib import nullcontext as does_not_raise
+from copy import deepcopy
 import pytest
 from unittest.mock import MagicMock
 from container_export import (
@@ -328,5 +329,55 @@ class TestContainerExporter:
             assert sess == [origin]
 
 
+def test_container_hierarchy():
+    hierarchy_dict = {
+        "group": flywheel.Group(id="test_group", label="Test Group"),
+        "project": flywheel.Project(label="test_project"),
+        "subject": flywheel.Subject(label="test_subject", sex="other"),
+        "session": flywheel.Session(age=31000000, label="test_session", weight=50, )
+    }
+    # test from_dict
+    test_hierarchy = ContainerHierarchy.from_dict(hierarchy_dict)
+    # test deepcopy
+    assert deepcopy(test_hierarchy) != test_hierarchy
+    # test path
+    assert test_hierarchy.path == "test_group/test_project/test_subject/test_session"
+    # test parent
+    assert test_hierarchy.parent.label == "test_subject"
+    # test from_container
+    mock_client = MagicMock(spec=dir(flywheel.Client))
+    parent_dict = dict()
+    for item in ("group", "project", "subject"):
+        value = hierarchy_dict.copy().get(item)
+        parent_dict[item] = item
+        setattr(mock_client, f"get_{item}", lambda x: value)
+    session = flywheel.Session(age=31000000, label="test_session", weight=50)
+    session.parents = parent_dict
+    assert ContainerHierarchy.from_container(mock_client, session).container_type == "session"
+    # test _get_container
+    assert test_hierarchy._get_container(None, None, None) is None
+    with pytest.raises(ValueError) as exc:
+        test_hierarchy._get_container(None, "garbage", "garbage_id")
+        assert str(exc) == 'Cannot get a container of type garbage'
+    mock_client = MagicMock(spec=dir(flywheel.Client))
+    mock_client.get_session = lambda x: x
+    assert test_hierarchy._get_container(mock_client, "session", "session_id") == "session_id"
+    # test container_type
+    assert test_hierarchy.container_type == "session"
+    # test dicom_map
+    exp_map = {'PatientWeight': 50, 'PatientAge': '011M', 'StudyID': 'test_session', 'PatientSex': 'O', 'PatientID': 'test_subject'}
+    assert exp_map == test_hierarchy.dicom_map
+    # test get
+    assert test_hierarchy.get("container_type") == "session"
+    # test get_patient_sex_from_subject
+    assert test_hierarchy.get_patientsex_from_subject(flywheel.Subject()) == ""
+    # test get_patientage_from_session
+    assert test_hierarchy.get_patientage_from_session(flywheel.Session()) is None
 
-
+    # test get_child_hierarchy
+    test_acquisition = flywheel.Acquisition(label="test_acquisition")
+    acq_hierarchy = test_hierarchy.get_child_hierarchy(test_acquisition)
+    assert acq_hierarchy.dicom_map["SeriesDescription"] == test_acquisition.label
+    # test get_parent_hierarchy
+    parent_hierarchy = test_hierarchy.get_parent_hierarchy()
+    assert parent_hierarchy.container_type == "subject"
