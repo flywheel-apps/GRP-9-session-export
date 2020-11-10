@@ -24,7 +24,7 @@ from dicom_metadata import (
     fix_type_based_on_dicom_vm,
     filter_update_keys,
 )
-from util import get_sanitized_filename, quote_numeric_string, false_if_exc_is_timeout, false_if_exc_timeout_or_sub_exists
+from util import get_sanitized_filename, quote_numeric_string, false_if_exc_is_timeout, false_if_exc_is_timeout_or_sub_exists
 from dicom_edit import edit_dicom
 from container_export import ContainerExporter
 
@@ -158,7 +158,7 @@ def _update_file_metadata(fw, orig_f, new_f):
     backoff.expo,
     flywheel.rest.ApiException,
     max_time=300,
-    giveup=false_if_exc_timeout_or_sub_exists,
+    giveup=false_if_exc_is_timeout_or_sub_exists,
     jitter=backoff.full_jitter,
 )
 def _find_or_create_subject(fw, session, project, subject_code):

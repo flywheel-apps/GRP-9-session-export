@@ -98,17 +98,41 @@ def get_dict_list_common_dict(dict_list):
 
 
 def false_if_exc_is_timeout(exception):
+    """
+    function to provide to backoff decorator as giveup parameter (backoff gives
+        up when function evaluates True). Returns False if exception has a
+        status attribute equal to 500, 502, 504
+    Args:
+        exception (Exception): an exception caught by backoff
+
+    Returns:
+        bool: whether to giveup/raise
+    """
     if hasattr(exception, "status"):
         if exception.status in [504, 502, 500]:
             return False
     return True
 
 
-def false_if_exc_timeout_or_sub_exists(exception):
+def false_if_exc_is_timeout_or_sub_exists(exception):
+    """
+    function to provide to backoff decorator as giveup parameter (backoff gives
+        up when function evaluates True). Returns False if exception has a
+        status attribute equal to 500, 502, 504 and already exists exceptions
+        with status
+    Args:
+        exception (Exception): an exception caught by backoff
+
+    Returns:
+        bool: whether to giveup/raise
+    """
     is_timeout = not false_if_exc_is_timeout(exception)
-    subject_exists = bool(
-        exception.status in [409, 422] and "already exists" in exception.detail
-    )
+    subject_exists = False
+    if hasattr(exception, "status") and getattr(exception, "detail", None):
+
+        if exception.status in [409, 422] and "already exists" in exception.detail:
+            subject_exists = True
+
     if is_timeout or subject_exists:
         return False
     else:

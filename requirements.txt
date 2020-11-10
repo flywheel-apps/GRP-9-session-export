@@ -1,5 +1,5 @@
 jsonschema~=3.2.0
-flywheel-sdk~=11.0.0
+flywheel-sdk~=12.4.0
 flywheel-metadata-toolkit~=0.1.0b3
 flywheel-gear-toolkit==0.1.1
 pandas~=1.0.1

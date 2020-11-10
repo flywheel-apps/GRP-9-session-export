@@ -49,6 +49,7 @@ main() {
     rm -rf .coverage htmlcov
 
     python -m pytest --cov tests/unit_tests
+    coverage report --show-missing
 }
 
 log() {

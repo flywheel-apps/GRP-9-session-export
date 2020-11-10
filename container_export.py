@@ -16,7 +16,7 @@ from util import (
     quote_numeric_string,
     get_sanitized_filename,
     false_if_exc_is_timeout,
-    false_if_exc_timeout_or_sub_exists,
+    false_if_exc_is_timeout_or_sub_exists,
 )
 
 from dicom_metadata import get_compatible_fw_header
@@ -228,7 +228,7 @@ class ContainerExporter:
         backoff.expo,
         flywheel.rest.ApiException,
         max_time=300,
-        giveup=false_if_exc_timeout_or_sub_exists,
+        giveup=false_if_exc_is_timeout_or_sub_exists,
         jitter=backoff.full_jitter,
     )
     def find_or_create_container_copy(origin_container, export_parent):
@@ -553,6 +553,8 @@ class FileExporter:
                 info_str = f"Flywheel DICOM map: {pformat(self.dicom_map)}"
                 self.log.info(info_str)
                 dicom_header_dict.update(self.dicom_map)
+            if dicom_header_dict != self._info.get("header", {}).get("dicom"):
+                self._info["header"]["dicom"] = dicom_header_dict
 
         return dicom_header_dict
 
@@ -571,7 +573,7 @@ class FileExporter:
         backoff.expo,
         flywheel.rest.ApiException,
         max_time=300,
-        giveup=false_if_exc_timeout_or_sub_exists,
+        giveup=false_if_exc_is_timeout_or_sub_exists,
         jitter=backoff.full_jitter,
         on_giveup=lambda x: dict(),
     )
