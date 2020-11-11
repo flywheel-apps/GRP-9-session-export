@@ -2,10 +2,12 @@ import csv
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-from container_export import ContainerBase
+from flywheel.models.mixins import ContainerBase
 
 
 class ExportLog:
+    """Log to record containers exported"""
+
     def __init__(self, export_project=None, archive_project=None):
         """
 
@@ -26,6 +28,9 @@ class ExportLog:
 
     @property
     def archive_path(self):
+        """
+        resolver path for the archive project (None if no archive project defined)
+        """
         if not self._archive_path and self.archive_project:
             self._archive_path = PurePosixPath(
                 f"{self.archive_project.group}/{self.archive_project.label}"
@@ -41,6 +46,18 @@ class ExportLog:
         created_files=[],
         failed_files=[],
     ):
+        """
+        Add a record to the self.records list for an exported container_type
+        Args:
+            origin_path (str): resolver path of the origin container_type
+            container_copy (ContainerBase): copy of the origin container_type
+            created_copy (bool): True if container_copy was created, False if
+                it was found
+            found_files (list): list of files found on container_copy during export
+            created_files (list): list of files created during export
+            failed_files (list): list of files that failed to export
+
+        """
         if created_copy:
             created_dict_key = container_copy.container_type + "s"
             self.created_dict[created_dict_key].append(container_copy.id)
@@ -56,6 +73,12 @@ class ExportLog:
         self.records.append(record)
 
     def write_csv(self, path, archive_project_path=None):
+        """
+        Write a csv representation of self.records to path
+        Args:
+            path (str): path to which to write the csv
+            archive_project_path (str or None): resolver path of the archive project
+        """
         fieldnames = ["Container", "Name", "Status", "Origin Path", "Export Path"]
         if archive_project_path:
             fieldnames.append("Archive Path")
@@ -75,8 +98,12 @@ class ExportLog:
 
 @dataclass
 class ExportRecord:
-    container: str
-    name: str
+    """
+    Class to represent export of a flywheel container_type and its files
+    """
+
+    container_type: str
+    container_label: str
     origin_path: str
     created: bool
     _found_files: tuple = ()
@@ -85,6 +112,7 @@ class ExportRecord:
 
     @property
     def status(self):
+        """str representing status of export of the container_type"""
         if self.created:
             status = "created"
         else:
@@ -95,18 +123,25 @@ class ExportRecord:
 
     @property
     def created_files(self):
+        """str representing the list of files created during export"""
         return self.get_file_tuple_str(self._created_files)
 
     @property
     def found_files(self):
+        """str representing the list of files found during export"""
         return self.get_file_tuple_str(self._found_files)
 
     @property
     def failed_files(self):
+        """str representing the list of files that failed to export"""
         return self.get_file_tuple_str(self._failed_files)
 
     @staticmethod
     def get_file_tuple_str(file_tuple):
+        """
+        convert a tuple into a string if the tuple is not empty, otherwise
+            return empty str
+        """
         if file_tuple:
             return str(file_tuple)
         else:
@@ -114,6 +149,8 @@ class ExportRecord:
 
     @staticmethod
     def replace_origin_path_project(origin_path, project_path):
+        """Replace the project path in origin_path with project_path"""
+
         def ensure_Path(input_path):
             if not isinstance(input_path, PurePosixPath):
                 return PurePosixPath(input_path)
@@ -126,9 +163,20 @@ class ExportRecord:
         return str(project_path / "/".join(origin_path.parts[2:]))
 
     def get_csv_dict(self, export_project_path, archive_project_path=None):
+        """
+        Get a dictionary to be appended to a csv
+        Args:
+            export_project_path (str or PurePosixPath): resolver path for the
+                export project
+            archive_project_path(str or PurePosixPath or None):  resolver path
+                for the archive project
+
+        Returns:
+            dict: representation of the record to be written to a csv
+        """
         csv_dict = {
-            "Container": self.container,
-            "Name": self.name,
+            "Container": self.container_type,
+            "Name": self.container_label,
             "Status": self.status,
             "Origin Path": self.origin_path,
             "Export Path": self.replace_origin_path_project(
