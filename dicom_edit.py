@@ -44,13 +44,15 @@ def get_dicom_save_config_kwargs(dicom_path):
         "fix_vm1_strings": False,
         "replace_un_with_known_vr": False,
     }
-    for conf_kwargs in [default_pydicom_config, fw_fixer_config, fw_fixer_un_vr_config]:
+    kwarg_dict_list = [default_pydicom_config, fw_fixer_config, fw_fixer_un_vr_config]
+    for i, conf_kwargs in enumerate(kwarg_dict_list):
         try:
             write_dcm_at_path_to_temp_with_config(dicom_path, **conf_kwargs)
             return conf_kwargs
         except:
+            if i == 2:
+                log.error("Cannot save %s - traceback:\n", dicom_path, exc_info=True)
             pass
-    log.error("Cannot save %s - traceback:\n", dicom_path, exc_info=True)
 
 
 def can_update_dicom_tag(dcm_path, tag_keyword, tag_value, **fw_config_kwargs):
@@ -143,6 +145,7 @@ class DicomUpdater:
     """
     Class for comparing and updating DICOM files against Flywheel DICOM metadata
     """
+
     exclude_vrs = ("OF", "SQ", "UI", None)
 
     def __init__(self, dicom_path_list, flywheel_header, files_log):
@@ -188,9 +191,7 @@ class DicomUpdater:
     def local_common_dicom_dict(self):
         """dict with local DICOM tags that share the same value across all files."""
         if not isinstance(self._local_common_dicom_dict, dict):
-            common_dict = get_dict_list_common_dict(
-                self.dicom_dict_list
-            )
+            common_dict = get_dict_list_common_dict(self.dicom_dict_list)
             # Remove non-dicom tags such as path for list of 1 file
             common_dict = {k: v for k, v in common_dict.items() if k in keyword_dict}
             self._local_common_dicom_dict = common_dict
@@ -285,11 +286,12 @@ class DicomUpdater:
                 self.log.debug(info_str)
                 update_dict = {k: v.fw_value for k, v in self.header_diff_dict.items()}
                 # Remove OF, SQ, UI VR tags
-                exclude_vr_tags = {
-                    k: update_dict.pop(k)
-                    for k in update_dict
+                exclude_keys = [
+                    k
+                    for k in update_dict.keys()
                     if dictionary_VR(k) in self.exclude_vrs
-                }
+                ]
+                exclude_vr_tags = {k: update_dict.pop(k) for k in exclude_keys}
                 if exclude_vr_tags:
                     warn_str = (
                         f"{len(exclude_vr_tags)} DICOM tags have VRs {self.exclude_vrs} "
@@ -312,14 +314,19 @@ class DicomUpdater:
         if self.safe_to_update:
             dicom_paths = [dcm["path"] for dcm in self.dicom_dict_list]
             if self.update_dict:
-                updated_paths = [edit_dicom(path, self.update_dict) for path in dicom_paths]
+                updated_paths = [
+                    edit_dicom(path, self.update_dict) for path in dicom_paths
+                ]
                 if all(updated_paths):
                     info_str = f"Successfully updated {len(updated_paths)} DICOMs"
                     self.log.info(info_str)
                     return updated_paths
                 else:
-                    failed_list = list({dicom_paths} - {updated_paths})
-                    warn_str = f"Failed to update {len(failed_list)} DICOMs: {failed_list}"
+                    updated_paths = [path for path in updated_paths if path is not None]
+                    failed_list = list(set(dicom_paths) - set(updated_paths))
+                    warn_str = (
+                        f"Failed to update {len(failed_list)} DICOMs: {failed_list}"
+                    )
                     self.log.warning(warn_str)
                 return updated_paths
             else:

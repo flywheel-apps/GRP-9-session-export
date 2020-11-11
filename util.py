@@ -92,7 +92,9 @@ def get_dict_list_common_dict(dict_list):
     def get_common_dict(dict1, dict2):
         """get a dictionary of common key-value pairs from two dicts"""
         return {k: v for k, v in dict1.items() if dict2.get(k) == v}
-
+    # Reduce will raise if list is empty
+    if not dict_list:
+        return dict()
     # Refer to https://docs.python.org/3.0/library/functools.html for more info
     return reduce(get_common_dict, dict_list)
 
