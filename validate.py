@@ -128,7 +128,10 @@ def get_project(fw, project_name):
     """
     project = None
     project = fw.lookup(project_name)
-    log.debug(f"Found Project {project.label}, id {project.id}")
+    if project:
+        log.debug(f"Found Project {project.label}, id {project.id}")
+    else:
+        log.debug(f"Project {project_name} not found")
     return project
 
 

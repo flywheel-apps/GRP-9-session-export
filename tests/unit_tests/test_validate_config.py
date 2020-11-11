@@ -2,7 +2,10 @@ from unittest.mock import MagicMock
 from contextlib import nullcontext as does_not_raise
 
 import flywheel
+from flywheel.rest import ApiException
+import logging
 import pytest
+
 
 from validate import (
     container_needs_export,
@@ -10,32 +13,57 @@ from validate import (
     get_project,
     validate_context,
     validate_gear_rules,
+    false_if_exc_is_not_found_or_forbidden,
 )
 
 
-class TestGetProject:
-    def test_project_exists(self, sdk_mock):
-        test_proj = "test/test_proj"
-        sdk_mock.lookup.return_value = flywheel.Project(label=test_proj)
+@pytest.mark.parametrize(
+    "code,val",
+    [
+        [400, False],
+        [401, True],
+        [403, True],
+        [404, True],
+        [405, True],
+        [422, True],
+        [423, False],
+    ],
+)
+def test_backoff_giveup_if_exc_not_found_or_forbidden(code, val):
+    exc = flywheel.rest.ApiException(status=code)
+    ret = false_if_exc_is_not_found_or_forbidden(exc)
+    assert ret == val
 
-        proj = get_project(sdk_mock, test_proj)
-        sdk_mock.lookup.assert_called_once_with(test_proj)
 
-        assert isinstance(proj, flywheel.Project)
-        assert proj.label == test_proj
-
-    # @pytest.mark.parametrize(
-    #     "errors,length", [([], 1), (["test"], 2), (["test1", "test2"], 3)]
-    # )
-    # Can't test backoff easily, or figure out a way
-    def test_project_does_not_exist(self, sdk_mock):
-        test_proj = "test/test_proj"
-        sdk_mock.lookup.side_effect = flywheel.rest.ApiException(status=403)
+@pytest.mark.parametrize(
+    "raises,exists",
+    [(does_not_raise(), True), (pytest.raises(flywheel.rest.ApiException), False),],
+)
+def test_get_project_exists(sdk_mock, raises, exists, caplog):
+    caplog.set_level(logging.DEBUG)
+    if exists:
+        # SDK mock instance of unittest.mock.MagicMock
+        # Mock return value of fw.lookup()
+        sdk_mock.lookup.return_value = flywheel.Project(label="test_proj")
+    else:
         sdk_mock.lookup.return_value = None
+        sdk_mock.lookup.side_effect = flywheel.rest.ApiException(status=404)
 
-        with pytest.raises(flywheel.rest.ApiException) as e:
-            proj = get_project(sdk_mock, test_proj)
-            assert e.status == 403
+    # test
+    with raises:
+        proj = get_project(sdk_mock, "test/test_proj")
+
+        # assertions
+        sdk_mock.lookup.assert_called_once_with("test/test_proj")
+        if exists:
+            assert isinstance(proj, flywheel.Project)
+            assert len(caplog.record_tuples) == 1
+            assert caplog.records[0].message == "Found Project test_proj, id None"
+            assert proj.label == "test_proj"
+        else:
+            assert proj is None
+            assert len(caplog.record_tuples) == 1
+            assert caplog.records[0].message == "Project test/test_proj not found"
 
 
 class TestGetDestination:
@@ -171,7 +199,8 @@ class TestValidateContext:
             ),
         ],
     )
-    def test_validate_calls(self, mocker, gear_context, config, call_num):
+    def test_validate_calls(self, mocker, gear_context, config, call_num, caplog):
+        caplog.set_level(logging.INFO)
         mock_proj = (
             flywheel.Project(
                 label="test",
@@ -200,30 +229,33 @@ class TestValidateContext:
         check_exported_mock.assert_called_once_with(
             flywheel.Subject(label="test"), config
         )
+        msgs = [rec.message for rec in caplog.records]
         if "check_gear_rules" in config:
             check_gear_rules_mock.assert_called_once_with(
                 gear_context.client, mock_proj
             )
+            assert "No enabled rules were found. Moving on..." in msgs
         else:
             check_gear_rules_mock.assert_not_called()
+            assert "No enabled rules were found. Moving on..." not in msgs
 
     @pytest.mark.parametrize(
-        "proj", [None, "proj"],
+        "proj",
+        [
+            {"export_project": flywheel.Project(label="export")},
+            {"archive_project": flywheel.Project(label="archvie")},
+        ],
     )
-    def test_errors(self, mocker, sdk_mock, gear_context, caplog, proj):
-        gear_context.config = {"export_project": proj}
+    def test_get_proj_errors(self, mocker, sdk_mock, gear_context, caplog, proj):
+        gear_context.config = {"export_project": "test", "archive_project": "test"}
+        gear_context.config.update(proj)
 
-        def get_proj_side_effect(fw, proj):
-            return flywheel.Project(
-                id="test",
-                label="test",
-                parents=flywheel.ContainerParents(group="test"),
-            )
+        def get_proj_side_effect(fw, project):
+            if not hasattr(project, "label"):
+                raise flywheel.rest.ApiException(status=600)
 
-        if not proj is None:
-            # Mock get_project to return an actual project
-            get_proj_mock = mocker.patch("validate.get_project")
-            get_proj_mock.side_effect = get_proj_side_effect
+        get_proj_mock = mocker.patch("validate.get_project")
+        get_proj_mock.side_effect = get_proj_side_effect
 
         with pytest.raises(SystemExit):
             export, archive, dest = validate_context(gear_context)
@@ -233,3 +265,72 @@ class TestValidateContext:
                     for rec in caplog.get_records(when="teardown")
                 ]
             )
+
+    @pytest.mark.parametrize(
+        "to_mock,val,to_err,raises,log",
+        [
+            (
+                ["get_project"],
+                [None],
+                dict(),
+                True,
+                "Export project needs to be specified",
+            ),
+            (
+                ["get_project", "validate_gear_rules"],
+                [flywheel.Project(label="test"), True],
+                dict(),
+                True,
+                "Aborting Session Export: test has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior.",
+            ),
+            (
+                ["get_project", "validate_gear_rules", "get_destination"],
+                ["test", False, None],
+                {"get_destination": ValueError("test")},
+                True,
+                "Could not find destination with id test",
+            ),
+            (
+                ["get_project", "validate_gear_rules", "get_destination"],
+                ["test", False, None],
+                {"get_destination": ApiException(status=20)},
+                True,
+                "Could not find destination with id test",
+            ),
+            (
+                [
+                    "get_project",
+                    "validate_gear_rules",
+                    "get_destination",
+                    "container_needs_export",
+                ],
+                ["test", False, flywheel.Session(label="test"), False],
+                dict(),
+                True,
+                "session test has already been exported and <force_export> = False. Nothing to do!",
+            ),
+        ],
+    )
+    def test_errors(
+        self, mocker, to_mock, val, to_err, raises, log, caplog, gear_context
+    ):
+        gear_context.config = {
+            "destination": {"id": "test", "container_type": "session", "label": "test"},
+            "export_project": "test",
+            "archive_project": "test",
+            "check_gear_rules": True,
+        }
+        mocks = {}
+        for mock, val in zip(to_mock, val):
+            mocks[mock] = mocker.patch(f"validate.{mock}")
+            mocks[mock].return_value = val
+        for mock, err in to_err.items():
+            if mock in mocks:
+                mocks[mock].side_effect = err
+        if raises:
+            my_raise = pytest.raises(SystemExit)
+        else:
+            my_raise = does_not_raise()
+        with my_raise:
+            validate_context(gear_context)
+
