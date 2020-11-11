@@ -280,7 +280,7 @@ class ContainerExporter:
         created = list()
         failed = list()
         for ifile in origin_container.files:
-            file_exporter = FileExporter(fw_client, ifile, dicom_map)
+            file_exporter = FileExporter.from_client(fw_client, ifile, dicom_map)
             exported_name, file_created = file_exporter.find_or_create_file_copy(
                 export_container
             )
@@ -475,25 +475,50 @@ class ContainerExporter:
 
 
 class FileExporter:
-    def __init__(self, fw_client, file_entry, dicom_map=None):
+    def __init__(
+        self, file_entry, classification_schema, upload_function, dicom_map=None
+    ):
         """
         Args:
-            fw_client (flywheel.Client): the flywheel client
             file_entry (flywheel.FileEntry): the file to export
+            classification_schema (dict): dictionary representing valid classifications
+                for file_entry
+            upload_function: function that takes FileEntry.parent.id,
+                path to file, and metadata string parameters that will be invoked
+                by self.upload
+            dicom_map (dict or None): dictionary to use for mapping Flywheel
+                attributes to DICOM file header tags
         """
         self.sanitized_name = get_sanitized_filename(file_entry.name)
         self.origin_file = file_entry
         self.origin_id = hash_value(self.origin_file.id)
         self.type = file_entry.type
-        self._modality = file_entry.modality
+        self.modality = self.get_modality(file_entry)
         self._classification = file_entry.classification
         self._info = file_entry.info
-        self._upload_function = fw_client.upload_file_to_container
+        self._upload_function = upload_function
+        self._fw_dicom_header = None
         self._log = None
-        self.classification_schema = self.get_classification_schema(
-            fw_client, self.modality
-        )
+        self.classification_schema = classification_schema
         self.dicom_map = dicom_map
+
+    @classmethod
+    def from_client(cls, fw_client, file_entry, dicom_map=None):
+        """
+        Initialize a FileExporter instance from a FileEntry and flywheel.Client
+        Args:
+            fw_client (flywheel.Client): the flywheel client
+            file_entry (flywheel.FileEntry): the file to export
+            dicom_map (dict or None): dictionary to use for mapping Flywheel
+                attributes to DICOM file header tags
+
+        Returns:
+            FileExporter
+        """
+        upload_function = fw_client.upload_file_to_container
+        modality = cls.get_modality(file_entry)
+        classification_schema = cls.get_classification_schema(fw_client, modality)
+        return cls(file_entry, classification_schema, upload_function, dicom_map)
 
     @property
     def classification(self):
@@ -521,6 +546,8 @@ class FileExporter:
             defined
         """
         self._info["export"] = {"origin_id": self.origin_id}
+        if self.fw_dicom_header:
+            self._info["header"]["dicom"] = self.fw_dicom_header
         self.log.debug("file info is %s", pformat(self._info))
         return self._info
 
@@ -531,32 +558,32 @@ class FileExporter:
             self._log = logging.getLogger(f"{self.sanitized_name}")
         return self._log
 
-    @property
-    def modality(self):
-        """The file modality"""
+    @staticmethod
+    def get_modality(file_entry):
+        """Get the file modality for file_entry"""
+        modality = file_entry.modality
         # Special case - mriqc output files do not have modality set, so
         # we must set the modality prior to the classification to avoid errors.
-        if not self._modality and self.sanitized_name.endswith("mriqc.qa.html"):
-            self._modality = "MR"
-        self.log.debug("file modality is %s", self._modality)
-        return self._modality
+        if not file_entry.modality and file_entry.name.endswith("mriqc.qa.html"):
+            modality = "MR"
+
+        return modality
 
     @property
     def fw_dicom_header(self):
         """DICOM header information from file.info.header.dicom"""
         dicom_header_dict = self._info.get("header", {}).get("dicom")
 
-        if dicom_header_dict:
+        if dicom_header_dict and not self._fw_dicom_header:
             # Backwards compatibility
             dicom_header_dict = get_compatible_fw_header(dicom_header_dict)
             if self.dicom_map:
                 info_str = f"Flywheel DICOM map: {pformat(self.dicom_map)}"
                 self.log.info(info_str)
                 dicom_header_dict.update(self.dicom_map)
-            if dicom_header_dict != self._info.get("header", {}).get("dicom"):
-                self._info["header"]["dicom"] = dicom_header_dict
+            self._fw_dicom_header = dicom_header_dict
 
-        return dicom_header_dict
+        return self._fw_dicom_header
 
     @fw_dicom_header.setter
     def fw_dicom_header(self, value):
@@ -566,7 +593,8 @@ class FileExporter:
                 f"info.header.dicom must be a dict, {type(value)} provided"
             )
         else:
-            self._info["header"] = {"dicom": value}
+            self._info["header"]["dicom"] = value
+            self._fw_dicom_header = value
 
     @staticmethod
     @backoff.on_exception(
@@ -913,7 +941,9 @@ class ContainerHierarchy:
                 self.acquisition,
             )
             labels = [self.group.id]
-            labels.extend([(c.label or c.get("code")) for c in containers if c is not None])
+            labels.extend(
+                [(c.label or c.get("code")) for c in containers if c is not None]
+            )
             if labels:
                 self._path = "/".join(labels)
         return self._path
