@@ -1,17 +1,19 @@
-import tempfile
 import os
-import flywheel
-import flywheel_gear_toolkit
+import tempfile
 from contextlib import nullcontext as does_not_raise
 from copy import deepcopy
-import pytest
 from unittest.mock import MagicMock
+
+import flywheel
+import flywheel_gear_toolkit
+import pytest
+
 from container_export import (
+    CONTAINER_KWARGS_KEYS,
+    EXCLUDE_TAGS,
     ContainerExporter,
     ContainerHierarchy,
     FileExporter,
-    CONTAINER_KWARGS_KEYS,
-    EXCLUDE_TAGS,
 )
 from util import hash_value
 
@@ -541,10 +543,29 @@ def test_file_exporter():
     )
     # test get_modaility
     assert FileExporter.get_modality(file_entry) == "MR"
-    assert FileExporter.get_modality(flywheel.FileEntry(name="test.mriqc.qa.html")) == "MR"
+    assert (
+        FileExporter.get_modality(flywheel.FileEntry(name="test.mriqc.qa.html")) == "MR"
+    )
     # test classification
-    assert file_exporter.classification == {"Custom": ["Spam", "Eggs"], "Measurement": ["T1"], "Intent": ["Structural"]}
-    exp_info = {'header': {'dicom': {'InstanceNumber': 1, 'PatientPosition': 'HFS', 'PatientSex': 'O', 'PatientID': 'Flywheel', 'SeriesDescription': 'SPAM_study'}}, 'export': {'origin_id': '0fb27832c685c35889ba3653994bae061237518c40ed57d3b41eae17bf923137'}}
+    assert file_exporter.classification == {
+        "Custom": ["Spam", "Eggs"],
+        "Measurement": ["T1"],
+        "Intent": ["Structural"],
+    }
+    exp_info = {
+        "header": {
+            "dicom": {
+                "InstanceNumber": 1,
+                "PatientPosition": "HFS",
+                "PatientSex": "O",
+                "PatientID": "Flywheel",
+                "SeriesDescription": "SPAM_study",
+            }
+        },
+        "export": {
+            "origin_id": "0fb27832c685c35889ba3653994bae061237518c40ed57d3b41eae17bf923137"
+        },
+    }
     # test info
     assert file_exporter.info == exp_info
     # test fw_dicom_header
@@ -561,7 +582,10 @@ def test_file_exporter():
     mock_client.upload_file_to_container = upload_func
     file_exporter = FileExporter.from_client(mock_client, file_entry, dicom_map_dict)
     # test get_classification_schema
-    assert file_exporter.get_classification_schema(mock_client, "MR") == MR_CLASSIFICATION_SCHEMA
+    assert (
+        file_exporter.get_classification_schema(mock_client, "MR")
+        == MR_CLASSIFICATION_SCHEMA
+    )
 
     # Raise with a status that is not 404 and will not get caught with backoff
     def raise_func(*args):
@@ -572,7 +596,9 @@ def test_file_exporter():
         file_exporter.get_classification_schema(mock_client, "MR")
     # test find_file_copy
     file_entry.info = file_exporter.info.copy()
-    export_parent = flywheel.Acquisition(label="SPAM_study", files=[file_entry], id="test_id")
+    export_parent = flywheel.Acquisition(
+        label="SPAM_study", files=[file_entry], id="test_id"
+    )
     assert file_exporter.find_file_copy(export_parent)
     # test create_file_copy
     setattr(file_entry, "download", lambda x: None)

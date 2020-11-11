@@ -1,8 +1,8 @@
 import hashlib
 import logging
 import re
-
 from functools import reduce
+
 from pathvalidate import sanitize_filename
 
 

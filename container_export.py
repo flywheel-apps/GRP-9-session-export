@@ -2,27 +2,25 @@ import json
 import logging
 import os
 import tempfile
-
 from copy import deepcopy
 from pprint import pformat
-
 
 import backoff
 import flywheel
 from flywheel.models.mixins import ContainerBase
 
+from dicom_edit import DicomUpdater
+from dicom_metadata import get_compatible_fw_header
+from export_log import ExportLog
 from util import (
-    hash_value,
-    quote_numeric_string,
-    get_sanitized_filename,
     false_if_exc_is_timeout,
     false_if_exc_is_timeout_or_sub_exists,
+    get_sanitized_filename,
+    hash_value,
+    quote_numeric_string,
 )
-
-from dicom_metadata import get_compatible_fw_header
-from dicom_edit import DicomUpdater
 from validate import validate_context
-from export_log import ExportLog
+
 
 CONTAINER_KWARGS_KEYS = {
     "acquisition": ("label", "timestamp", "timezone", "uid"),
