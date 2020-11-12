@@ -317,7 +317,7 @@ class ContainerExporter:
             return found, created, failed
         else:
             return (), (), ()
-        
+
     @staticmethod
     def get_container_logger(container):
         """
@@ -482,7 +482,7 @@ class ContainerExporter:
             self.export_log.write_csv(self.csv_path, self.export_log.archive_path)
         else:
             self.export_log.write_csv(self.csv_path)
-        return int(export_success)
+        return int(not export_success)
 
     def get_subject_export_params(self):
         """
