@@ -289,32 +289,35 @@ class ContainerExporter:
             tuple(list, list, list) tuple of lists of found files, created files,
                 and files that failed to export
         """
-        c_log = ContainerExporter.get_container_logger(origin_container)
-        c_log.info("Exporting files...")
-        found = list()
-        created = list()
-        failed = list()
-        for ifile in origin_container.files:
-            file_exporter = FileExporter.from_client(fw_client, ifile, dicom_map)
-            exported_name, file_created = file_exporter.find_or_create_file_copy(
-                export_container
-            )
-            if exported_name:
-                if file_created:
-                    created.append(exported_name)
+        if origin_container.files:
+            c_log = ContainerExporter.get_container_logger(origin_container)
+            c_log.info("Exporting files...")
+            found = list()
+            created = list()
+            failed = list()
+            for ifile in origin_container.files:
+                file_exporter = FileExporter.from_client(fw_client, ifile, dicom_map)
+                exported_name, file_created = file_exporter.find_or_create_file_copy(
+                    export_container
+                )
+                if exported_name:
+                    if file_created:
+                        created.append(exported_name)
+                    else:
+                        found.append(exported_name)
                 else:
-                    found.append(exported_name)
-            else:
-                failed.append(ifile.name)
+                    failed.append(ifile.name)
 
-        if found:
-            c_log.info("Found files: %s", str(found))
-        if created:
-            c_log.info("Created files: %s", str(created))
-        if failed:
-            c_log.info("Failed to export files: %s", str(failed))
-        return found, created, failed
-
+            if found:
+                c_log.info("Found files: %s", str(found))
+            if created:
+                c_log.info("Created files: %s", str(created))
+            if failed:
+                c_log.info("Failed to export files: %s", str(failed))
+            return found, created, failed
+        else:
+            return (), (), ()
+        
     @staticmethod
     def get_container_logger(container):
         """
@@ -362,7 +365,7 @@ class ContainerExporter:
             origin_container, export_parent
         )
 
-        if export_attachments:
+        if export_attachments or origin_container.container_type == "acquisition":
 
             if self.config.get("map_flywheel_to_dicom"):
                 dicom_map = export_hierarchy.dicom_map
@@ -415,6 +418,7 @@ class ContainerExporter:
         """
         child_container_gen = self.get_child_containers_generator(origin_container)
         for child in child_container_gen:
+            child = child.reload()
             child_hierarchy = container_hierarchy.get_child_hierarchy(child)
             self.export_container(
                 child,
