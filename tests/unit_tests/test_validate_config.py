@@ -1,19 +1,18 @@
-from unittest.mock import MagicMock
+import logging
 from contextlib import nullcontext as does_not_raise
+from unittest.mock import MagicMock
 
 import flywheel
-from flywheel.rest import ApiException
-import logging
 import pytest
-
+from flywheel.rest import ApiException
 
 from validate import (
     container_needs_export,
+    false_if_exc_is_not_found_or_forbidden,
     get_destination,
     get_project,
     validate_context,
     validate_gear_rules,
-    false_if_exc_is_not_found_or_forbidden,
 )
 
 
@@ -333,4 +332,3 @@ class TestValidateContext:
             my_raise = does_not_raise()
         with my_raise:
             validate_context(gear_context)
-

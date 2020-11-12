@@ -1,8 +1,7 @@
-import pytest
+from unittest.mock import Mock
 
 import flywheel
-
-from unittest.mock import Mock
+import pytest
 
 
 @pytest.fixture(scope="function")

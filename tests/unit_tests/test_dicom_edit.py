@@ -1,5 +1,6 @@
 import filecmp
 import shutil
+
 import pydicom
 from pydicom.data import get_testdata_files
 from pydicom.dataelem import RawDataElement

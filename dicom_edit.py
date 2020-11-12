@@ -6,11 +6,12 @@ from collections import namedtuple
 from pprint import pformat
 
 import pydicom
-from pydicom.datadict import keyword_dict, dictionary_VR
 from flywheel_metadata.file.dicom.fixer import fw_pydicom_config
+from pydicom.datadict import dictionary_VR, keyword_dict
 
 from dicom_metadata import get_compatible_fw_header, get_header_dict_list
 from util import get_dict_list_common_dict
+
 
 log = logging.getLogger(__name__)
 

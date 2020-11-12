@@ -1,19 +1,14 @@
 #!/usr/bin/env python
-
-import json
 import logging
-import os
 import re
 import string
-import tempfile
-import zipfile
 
-from functools import reduce
-from pathlib import Path
-
-import pandas as pd
 import pydicom
-from pydicom.datadict import DicomDictionary, tag_for_keyword, get_entry, dictionary_VR
+from pydicom.datadict import (
+    DicomDictionary,
+    get_entry,
+    tag_for_keyword,
+)
 
 
 log = logging.getLogger("dicom-metadata")
