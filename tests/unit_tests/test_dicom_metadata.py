@@ -14,6 +14,14 @@ def test_assign_type():
 
 
 def test_get_compatible_fw_header():
-    test_header_dict = {"SeriesDescription": ["spam", "eggs"], "DoesNotExist": "NA"}
-    exp_return = {"SeriesDescription": "spam\\eggs", "DoesNotExist": "NA"}
+    test_header_dict = {
+        "SeriesDescription": ["spam", "eggs"],
+        "DoesNotExist": "NA",
+        "AnatomicRegionSequence": [{"CodeValue": ["spam", "eggs"]}],
+    }
+    exp_return = {
+        "SeriesDescription": "spam\\eggs",
+        "DoesNotExist": "NA",
+        "AnatomicRegionSequence": [{"CodeValue": "spam\\eggs"}],
+    }
     assert get_compatible_fw_header(test_header_dict) == exp_return

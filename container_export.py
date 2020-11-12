@@ -244,6 +244,14 @@ class ContainerExporter:
                 it was created
 
         """
+        if origin_container.container_type == "project":
+            return export_parent, False
+        c_log = ContainerExporter.get_container_logger(origin_container)
+        debug_str = (
+            "Attempting to find or create copy of "
+            f"{origin_container.container_type} {origin_container.id}"
+        )
+        c_log.debug(debug_str)
         created = False
         found_container = ContainerExporter.find_container_copy(
             origin_container, export_parent
@@ -253,8 +261,15 @@ class ContainerExporter:
             return_container = ContainerExporter.create_container_copy(
                 origin_container, export_parent
             )
+            log_prefix_str = "Created"
         else:
+            log_prefix_str = "Found"
             return_container = found_container
+        log_info_str = (
+            f"{log_prefix_str} copy of {origin_container.container_type} "
+            f"{origin_container.id}"
+        )
+        c_log.info(log_info_str)
         return return_container, created
 
     @staticmethod
@@ -274,6 +289,8 @@ class ContainerExporter:
             tuple(list, list, list) tuple of lists of found files, created files,
                 and files that failed to export
         """
+        c_log = ContainerExporter.get_container_logger(origin_container)
+        c_log.info("Exporting files...")
         found = list()
         created = list()
         failed = list()
@@ -290,7 +307,30 @@ class ContainerExporter:
             else:
                 failed.append(ifile.name)
 
+        if found:
+            c_log.info("Found files: %s", str(found))
+        if created:
+            c_log.info("Created files: %s", str(created))
+        if failed:
+            c_log.info("Failed to export files: %s", str(failed))
         return found, created, failed
+
+    @staticmethod
+    def get_container_logger(container):
+        """
+        Get a logger for the container
+        Args:
+            container (ContainerBase): the container for which to get a logger
+
+        Returns:
+            logging.Logger
+        """
+        container_label = container.label or container.get("code")
+        log_name_str = (
+            f"{container.container_type} {container_label} " f"({container.id}):"
+        )
+        container_log = logging.getLogger(log_name_str)
+        return container_log
 
     def export_container(
         self,
@@ -298,6 +338,7 @@ class ContainerExporter:
         export_parent,
         export_attachments=False,
         export_hierarchy=None,
+        export_children=False,
     ):
         """
         Export origin_container to self.export_project
@@ -310,22 +351,19 @@ class ContainerExporter:
         Returns:
             copy of the origin_copy on export_parent
         """
-        container_label = origin_container.get("label", origin_container.get("code"))
-        log_msg_str = (
-            f"{export_hierarchy.container_type} {container_label} "
-            f"({origin_container.id}):"
+
+        c_log = ContainerExporter.get_container_logger(origin_container)
+        log_str = (
+            f"Exporting {origin_container.container_type} at path "
+            f"{export_hierarchy.path}"
         )
-        c_log = logging.getLogger(log_msg_str)
-        debug_str = f"Attempting to find or create copy of {export_hierarchy.path}"
-        c_log.debug(debug_str)
-        c_copy, created = self.find_or_create_container_copy(
+        c_log.info(log_str)
+        c_copy, c_created = self.find_or_create_container_copy(
             origin_container, export_parent
         )
-        prefix_str = "Created" if created else "Found"
-        log_str = f"{prefix_str} copy of {export_hierarchy.path}"
-        c_log.info(log_str)
-        if origin_container.container_type == "acquisition" or export_attachments:
-            c_log.info("Exporting files...")
+
+        if export_attachments:
+
             if self.config.get("map_flywheel_to_dicom"):
                 dicom_map = export_hierarchy.dicom_map
             else:
@@ -333,69 +371,110 @@ class ContainerExporter:
             found, created, failed = self.export_container_files(
                 self.fw_client, origin_container, c_copy, dicom_map
             )
-            if found:
-                c_log.info("Found files: %s", str(found))
-            if created:
-                c_log.info("Created files: %s", str(created))
-            if failed:
-                c_log.info("Failed to export files: %s", str(failed))
             self.export_log.add_container_record(
-                export_hierarchy.path, c_copy, created, found, created, failed
+                export_hierarchy.path, c_copy, c_created, found, created, failed
             )
         else:
-            self.export_log.add_container_record(export_hierarchy.path, c_copy, created)
-        return c_copy, created
+            self.export_log.add_container_record(
+                export_hierarchy.path, c_copy, c_created
+            )
+        if export_children:
+            self.export_child_containers(origin_container, c_copy, export_hierarchy)
+
+        return c_copy, c_created
+
+    @staticmethod
+    def get_child_containers_generator(origin_container):
+        """
+        Get the child containers generator (i.e. subject.sessions.iter()) for
+            origin container
+        Args:
+            origin_container (ContainerBase): the container for which to get the
+                child containers generator
+        Returns:
+            generator or list
+        """
+        if origin_container.container_type == "project":
+            return origin_container.subjects.iter()
+        elif origin_container.container_type == "subject":
+            return origin_container.sessions.iter()
+        elif origin_container.container_type == "session":
+            return origin_container.acquisitions.iter()
+        else:
+            return list()
+
+    def export_child_containers(
+        self, origin_container, container_copy, container_hierarchy
+    ):
+        """
+
+        Args:
+            origin_container (ContainerBase): container being exported
+            container_copy (ContainerBase): exported copy of origin_container
+            container_hierarchy (ContainerHierarchy): origin_container's hierarchy
+        """
+        child_container_gen = self.get_child_containers_generator(origin_container)
+        for child in child_container_gen:
+            child_hierarchy = container_hierarchy.get_child_hierarchy(child)
+            self.export_container(
+                child,
+                container_copy,
+                export_attachments=True,
+                export_hierarchy=child_hierarchy,
+                export_children=True,
+            )
+
+    def export_container_parents(self):
+        """
+        Prepare parents for session/acquisition export
+
+        Returns:
+            tuple(ContainerBase, bool): parent copy and whether it was created
+        """
+        if self.origin_hierarchy.container_type == "session":
+            session_hierarchy = self.origin_hierarchy
+
+        elif self.origin_hierarchy.container_type == "acquisition":
+            session_hierarchy = self.origin_hierarchy.get_parent_hierarchy()
+        else:
+            # project is parent or origin is project
+            return self.export_project, False
+        subject_hierarchy = session_hierarchy.get_parent_hierarchy()
+        subject_copy, subject_created = self.export_container(
+            self.origin_hierarchy.subject,
+            self.export_project,
+            export_hierarchy=subject_hierarchy,
+        )
+        # subject is parent
+        if self.origin_hierarchy.container_type == "session":
+            return subject_copy, subject_created
+
+        # session is parent
+        return self.export_container(
+            self.origin_hierarchy.session,
+            subject_copy,
+            export_hierarchy=session_hierarchy,
+        )
 
     def export(self):
         """Perform GRP-9 export of self.origin_container"""
         export_attachments = self.config.get("export_attachments")
-        export_params = self.get_subject_export_params()
-        subject_export_hierarchy = export_params[-1]
-        origin_subject = export_params[0]
-        subject_copy, created = self.export_container(*export_params)
-        sessions = self.get_origin_sessions()
-        export_success = True
-        for session in sessions:
-            session = session.reload()
-            session_hierarchy = subject_export_hierarchy.get_child_hierarchy(session)
-            try:
-                session_copy, session_created = self.export_container(
-                    session,
-                    subject_copy,
-                    export_attachments=export_attachments,
-                    export_hierarchy=session_hierarchy,
-                )
-                for acquisition in session.acquisitions():
-                    acquisition = acquisition.reload()
-                    acq_hierarchy = session_hierarchy.get_child_hierarchy(acquisition)
-                    try:
-                        acq_copy, acq_created = self.export_container(
-                            acquisition.reload(),
-                            session_copy,
-                            export_attachments=export_attachments,
-                            export_hierarchy=acq_hierarchy,
-                        )
-                    except:
-                        self.log.error(
-                            "Failed to export acquisition %s",
-                            acquisition.label,
-                            exc_info=True,
-                        )
-                        export_success = False
-
-            except:
-                self.log.error(
-                    "Failed to export session %s", session.label, exc_info=True
-                )
-                export_success = False
-                continue
+        export_parent, export_parent_created = self.export_container_parents()
+        self.export_container(
+            self.origin_container,
+            export_parent,
+            export_hierarchy=self.origin_hierarchy,
+            export_attachments=export_attachments,
+            export_children=True,
+        )
 
         if any(x.failed_files for x in self.export_log.records):
             export_success = False
-
+        else:
+            export_success = True
         # write the log csv
         if export_success and self.archive_project:
-            self.archive(origin_subject, sessions)
+            self.archive()
             self.export_log.write_csv(self.csv_path, self.export_log.archive_path)
         else:
             self.export_log.write_csv(self.csv_path)
@@ -439,37 +518,40 @@ class ContainerExporter:
             sessions = [self.origin_container.reload()]
         return sessions
 
-    def archive(self, subject, sessions):
+    def archive(self):
         """
         If an archive_project was set, move self.origin_container to it.
             If self.container_type is subject, move the subject if one doesn't
             already exist in archive_project, otherwise move sessions to
             a copy of the subject in archive_project
 
-        Args:
-            subject (flywheel.Subject): the origin subject
-            sessions (list or generator): the origin sessions
-
         """
 
-        def move_sessions(dest_subject, session_list):
+        def archive_sessions(session_list, dest_subject=None):
+
             """move sessions in session_list to dest_subject"""
             for session in session_list:
-                session.update({"subject": {"_id": dest_subject.id}})
+                if not dest_subject:
+                    tmp_dest_subject, created = self.find_or_create_container_copy(session.subject.reload(), self.archive_project)
+                else:
+                    tmp_dest_subject = dest_subject
+                session.update({"subject": {"_id": tmp_dest_subject.id}})
+
+        def archive_subject(origin_subject):
+            found_subject = self.find_container_copy(origin_subject, self.archive_project)
+            if not found_subject:
+                origin_subject.update(project=self.archive_project.id)
+            else:
+                archive_sessions(origin_subject.sessions.iter(), found_subject)
 
         if self.archive_project:
 
-            found_subject = self.find_container_copy(subject, self.archive_project)
             if self.container_type == "subject":
-                if not found_subject:
-                    subject.update(project=self.archive_project.id)
-                else:
-                    move_sessions(found_subject, sessions)
-            else:
-                archive_subject, created = self.find_or_create_container_copy(
-                    subject, sessions
-                )
-                move_sessions(archive_subject, sessions)
+                archive_subject(self.origin_container)
+
+            elif self.container_type == "session":
+
+                archive_sessions([self.origin_container])
 
 
 class FileExporter:

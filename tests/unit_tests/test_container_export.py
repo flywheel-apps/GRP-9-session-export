@@ -255,7 +255,7 @@ class TestContainerExporter:
         )
         create_mock.return_value = flywheel.Subject(label="test2")
         container, created = ContainerExporter.find_or_create_container_copy(
-            "test", "test"
+            flywheel.Subject(label="test"), "test"
         )
 
         assert created == (found is None)
@@ -510,8 +510,10 @@ MR_CLASSIFICATION_SCHEMA = {
 def test_file_exporter():
     classification_dict = {
         "Custom": ["Spam", "Eggs"],
-        "Measurement": ["Invalid", "T1"],
-        "Intent": ["Also Invalid", "Structural"],
+        "Measurement": "T1",
+        "Intent": ["Invalid", "Structural"],
+        "InvalidKey": "InvalidValue",
+        "Features": [],
     }
     info_dict = {
         "header": {
