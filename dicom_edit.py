@@ -114,7 +114,9 @@ def can_update_dicom_tag(dicom_path, tag_keyword, tag_value, **fw_config_kwargs)
                 str(dcm_tag_value),
             )
         except:
-            log.warning("Could not read current %s value for %s", tag_keyword, dicom_path)
+            log.warning(
+                "Could not read current %s value for %s", tag_keyword, dicom_path
+            )
     else:
         log.debug("%s is not currently present in DICOM header", tag_keyword)
 

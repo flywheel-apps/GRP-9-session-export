@@ -538,13 +538,17 @@ class ContainerExporter:
             """move sessions in session_list to dest_subject"""
             for session in session_list:
                 if not dest_subject:
-                    tmp_dest_subject, created = self.find_or_create_container_copy(session.subject.reload(), self.archive_project)
+                    tmp_dest_subject, created = self.find_or_create_container_copy(
+                        session.subject.reload(), self.archive_project
+                    )
                 else:
                     tmp_dest_subject = dest_subject
                 session.update({"subject": {"_id": tmp_dest_subject.id}})
 
         def archive_subject(origin_subject):
-            found_subject = self.find_container_copy(origin_subject, self.archive_project)
+            found_subject = self.find_container_copy(
+                origin_subject, self.archive_project
+            )
             if not found_subject:
                 origin_subject.update(project=self.archive_project.id)
             else:

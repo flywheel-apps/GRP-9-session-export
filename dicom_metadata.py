@@ -4,11 +4,7 @@ import re
 import string
 
 import pydicom
-from pydicom.datadict import (
-    DicomDictionary,
-    get_entry,
-    tag_for_keyword,
-)
+from pydicom.datadict import DicomDictionary, get_entry, tag_for_keyword
 
 
 log = logging.getLogger("dicom-metadata")
