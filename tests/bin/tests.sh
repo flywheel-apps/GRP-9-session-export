@@ -48,7 +48,8 @@ main() {
     find . -type f -name '*.pyc' -delete
     rm -rf .coverage htmlcov
 
-    python -m pytest tests/unit_tests
+    python -m pytest --cov tests/unit_tests
+    coverage report --show-missing
 }
 
 log() {
