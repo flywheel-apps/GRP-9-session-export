@@ -16,7 +16,7 @@ def main(gear_context):
     return exporter.export()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # with flywheel.GearContext() as context:
     with flywheel.GearContext() as context:
         if context.config.get("log_debug"):
