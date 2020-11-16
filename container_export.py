@@ -350,9 +350,10 @@ class ContainerExporter:
             export_parent (ContainerBase): parent container to which to copy origin_container
             export_attachments (bool): whether to export origin_container's file attachments
             export_hierarchy (ContainerHierarchy): ExportHierarchy for origin_container
-
+            export_children (bool): whether to export child containers (i.e.
+                acquisitions for a session, sessions for a subject)
         Returns:
-            copy of the origin_copy on export_parent
+            copy of the origin_container on export_parent
         """
 
         c_log = ContainerExporter.get_container_logger(origin_container)
@@ -418,6 +419,7 @@ class ContainerExporter:
         """
         child_container_gen = self.get_child_containers_generator(origin_container)
         for child in child_container_gen:
+            # reload to fully populate metadata
             child = child.reload()
             child_hierarchy = container_hierarchy.get_child_hierarchy(child)
             self.export_container(

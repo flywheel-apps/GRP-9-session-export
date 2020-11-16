@@ -17,13 +17,28 @@ log = logging.getLogger(__name__)
 
 
 def write_dcm_to_tempfile(dicom_ds):
+    """
+    Save dicom_ds to a tempfile (for determining fw_pydicom_config configuration
+        and troubleshooting problematic DICOMs)
+    Args:
+        dicom_ds (pydicom.Dataset): Dataset object to save to a tempfile
+
+    """
     with tempfile.NamedTemporaryFile(suffix=".dcm") as tempf:
         dicom_ds.save_as(tempf.name)
 
 
-def write_dcm_at_path_to_temp_with_config(path, **fw_config_kwargs):
+def write_dcm_at_path_to_temp_with_config(dicom_path, **fw_config_kwargs):
+    """
+    Load a pydicom Dataset for the DICOM at dicom_path using fw_config_kwargs
+    to a tempfile (for determining fw_pydicom_config configuration and
+        troubleshooting problematic DICOMs)
+    Args:
+        dicom_path (str or path-like): path to the DICOM to save to a tempfile
+        **fw_config_kwargs: kwargs to pass to fw_pydicom_config
+    """
     with fw_pydicom_config(**fw_config_kwargs):
-        dcm = pydicom.dcmread(path, force=True)
+        dcm = pydicom.dcmread(dicom_path, force=True)
         write_dcm_to_tempfile(dcm)
 
 
@@ -37,6 +52,18 @@ def character_set_callback(raw_elem, **kwargs):
 
 
 def get_dicom_save_config_kwargs(dicom_path):
+    """
+    Get the appropriate fw_pydicom_config configuration kwargs for saving the
+        DICOM at dicom_path
+    Args:
+        dicom_path (str or path-like): path to the DICOM for which to retrieve
+            fw_pydicom_config configuration kwargs
+
+    Returns:
+        None or dict: fw_pydicom_config kwargs to use for saving the DICOM at
+            dicom_path, None if it is not possible to save the file at dicom_path
+            with any known config kwargs
+    """
     log.debug("Getting save configuration for %s", dicom_path)
     default_pydicom_config = {"use_fw_callback": False}
     fw_fixer_config = {"callback": character_set_callback, "fix_vm1_strings": False}
@@ -56,13 +83,27 @@ def get_dicom_save_config_kwargs(dicom_path):
             pass
 
 
-def can_update_dicom_tag(dcm_path, tag_keyword, tag_value, **fw_config_kwargs):
+def can_update_dicom_tag(dicom_path, tag_keyword, tag_value, **fw_config_kwargs):
+    """
+    Determine whether public DICOM tag tag_keyword can be updated to tag_value
+        for the DICOM located at dicom_path
+    Args:
+        dicom_path (str or path-like): path to the DICOM file to check for
+            updatability
+        tag_keyword: keyword of the public DICOM tag to update
+        tag_value: value to which to update public DICOM tag tag_keyword
+        **fw_config_kwargs: kwargs to pass to fw_pydicom_config
+
+    Returns:
+        bool: whether public DICOM tag tag_keyword can be updated to tag_value
+            for the DICOM located at dicom_path
+    """
     can_update_tag = False
     if not pydicom.datadict.tag_for_keyword(tag_keyword):
         log.error("Unknown DICOM keyword: %s. Tag will not be added.", tag_keyword)
         return can_update_tag
     with fw_pydicom_config(**fw_config_kwargs):
-        dcm = pydicom.dcmread(dcm_path, force=True)
+        dcm = pydicom.dcmread(dicom_path, force=True)
     if tag_keyword in dcm:
         # We could have decode problems with the current tag/value
         try:
@@ -73,7 +114,7 @@ def can_update_dicom_tag(dcm_path, tag_keyword, tag_value, **fw_config_kwargs):
                 str(dcm_tag_value),
             )
         except:
-            log.warning("Could not read current %s value for %s", tag_keyword, dcm_path)
+            log.warning("Could not read current %s value for %s", tag_keyword, dicom_path)
     else:
         log.debug("%s is not currently present in DICOM header", tag_keyword)
 
@@ -81,7 +122,7 @@ def can_update_dicom_tag(dcm_path, tag_keyword, tag_value, **fw_config_kwargs):
         "Testing whether %s can be set as %s and saved for %s",
         tag_keyword,
         str(tag_value),
-        dcm_path,
+        dicom_path,
     )
     try:
         setattr(dcm, tag_keyword, tag_value)
@@ -93,13 +134,30 @@ def can_update_dicom_tag(dcm_path, tag_keyword, tag_value, **fw_config_kwargs):
             "Exception raised when attempting to set %s as %s for %s",
             tag_keyword,
             str(tag_value),
-            dcm_path,
+            dicom_path,
             exc_info=True,
         )
     return can_update_tag
 
 
-def can_set_dicom_tags(update_dict, dicom_path, **fw_config_kwargs):
+def can_update_dicom(dicom_path, update_dict, fw_config_kwargs):
+    """
+    Determine whether the DICOM tags specified in update_dict can individually
+        be updated within DICOM at dicom_path
+
+    Args:
+        dicom_path (str or path-like): path to the DICOM file to check for
+            updatability
+        update_dict (dict): dictionary with DICOM tag keyword:update value key:value
+            pairs
+        fw_config_kwargs: kwargs to pass to fw_pydicom_config
+
+    Returns:
+        bool: whether the DICOM at dicom_path can be updated using update_dict
+    """
+    # Cannot save if a dictionary wasn't returned
+    if fw_config_kwargs is None:
+        return False
     error_tags = list()
     for tag, value in update_dict.items():
         if can_update_dicom_tag(dicom_path, tag, value, **fw_config_kwargs) is False:
@@ -112,14 +170,17 @@ def can_set_dicom_tags(update_dict, dicom_path, **fw_config_kwargs):
         return True
 
 
-def can_update_dicom(dicom_path, update_dict, fw_config_kwargs):
-    # Cannot save if a dictionary wasn't returned
-    if fw_config_kwargs is None:
-        return False
-    return can_set_dicom_tags(update_dict, dicom_path, **fw_config_kwargs)
-
-
 def edit_dicom(dicom_path, update_dict):
+    """
+    Edit the DICOM file at dicom_path according to  update_dict
+    Args:
+        dicom_path (str or path-like): path to the DICOM file to edit
+        update_dict (dict): dictionary with DICOM tag keyword:update value key:value
+            pairs
+
+    Returns:
+        None or str: path to the edited file on success, None on failure
+    """
     log.debug("Checking that %s is saveable...", dicom_path)
     fw_config_kwargs = get_dicom_save_config_kwargs(dicom_path)
     # Cannot save if a dictionary wasn't returned
