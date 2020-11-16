@@ -319,7 +319,8 @@ class DicomUpdater:
                 )
                 self.log.warning(warn_str)
                 valid = False
-
+            # TODO: replace this logic with a funtion that checks a subset of
+            # actual DICOM tags that we expect to be common for a DICOM series
             # Majority of common tags are to be edited (wrong file)
             elif len(self.header_diff_dict) > (len(self.local_common_dicom_dict) / 3):
                 warn_str = (
