@@ -243,7 +243,6 @@ def get_pydicom_header(dcm):
         "ContourData",
         "EncryptedAttributesSequence",
     ]
-    not_found_tags = []
     tags = dcm.dir()
     for tag in tags:
         try:
@@ -254,14 +253,14 @@ def get_pydicom_header(dcm):
                 if value or value == 0:  # Some values are zero
                     # Put the value in the header
                     if (
-                        isinstance(value, str) and len(value) < 10240
+                        type(value) == str and len(value) < 10240
                     ):  # Max pydicom field length
                         header[tag] = format_string(value)
                     else:
                         header[tag] = assign_type(value)
 
                 else:
-                    not_found_tags.append(tag)
+                    log.debug("No value found for tag: " + tag)
 
             if (tag not in exclude_tags) and type(
                 dcm.get(tag)
@@ -271,10 +270,9 @@ def get_pydicom_header(dcm):
                 if seq_data:
                     header[tag] = seq_data
         except:
-            log.info("An exception was raised when getting tag %s", tag, exc_info=True)
+            log.debug("Failed to get " + tag)
             pass
 
-    log.debug("No value found for tags: " + str(not_found_tags))
     fix_type_based_on_dicom_vm(header)
 
     return header
