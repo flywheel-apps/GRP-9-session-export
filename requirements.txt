@@ -1,5 +1,5 @@
 jsonschema~=3.2.0
-flywheel-sdk~=12.4.0
+flywheel-sdk>=11.0.0
 flywheel-metadata-toolkit==0.1.4
 pandas~=1.0.1
 pydicom~=2.1.0
