@@ -219,7 +219,7 @@ class TestValidateContext:
         check_exported_mock.return_value = True
 
         check_gear_rules_mock = mocker.patch("validate.validate_gear_rules")
-        check_gear_rules_mock.return_value = False
+        check_gear_rules_mock.return_value = True
 
         export, archive, dest = validate_context(gear_context)
 
@@ -277,21 +277,21 @@ class TestValidateContext:
             ),
             (
                 ["get_project", "validate_gear_rules"],
-                [flywheel.Project(label="test"), True],
+                [flywheel.Project(label="test"), False],
                 dict(),
                 True,
                 "Aborting Session Export: test has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior.",
             ),
             (
                 ["get_project", "validate_gear_rules", "get_destination"],
-                ["test", False, None],
+                ["test", True, None],
                 {"get_destination": ValueError("test")},
                 True,
                 "Could not find destination with id test",
             ),
             (
                 ["get_project", "validate_gear_rules", "get_destination"],
-                ["test", False, None],
+                ["test", True, None],
                 {"get_destination": ApiException(status=20)},
                 True,
                 "Could not find destination with id test",
@@ -303,7 +303,7 @@ class TestValidateContext:
                     "get_destination",
                     "container_needs_export",
                 ],
-                ["test", False, flywheel.Session(label="test"), False],
+                ["test", True, flywheel.Session(label="test"), False],
                 dict(),
                 True,
                 "session test has already been exported and <force_export> = False. Nothing to do!",
