@@ -2,5 +2,6 @@ pydicom~=2.0.0
 pytest
 pytest-cov
 pytest-mock
-flywheel-sdk~=11.0.0
+flywheel-sdk>=11.0.0
+flywheel_gear_toolkit==0.1.1
 

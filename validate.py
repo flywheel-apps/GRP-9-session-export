@@ -69,10 +69,10 @@ def validate_context(gc):
         sys.exit(1)
 
     #####
-    # Check for projet rules
+    # Check for project rules
     if gc.config.get("check_gear_rules"):
         rules = validate_gear_rules(fw, export_project)
-        if rules:
+        if not rules:
             message = f"Aborting Session Export: {export_project.label} has ENABLED GEAR RULES and 'check_gear_rules' == True. If you would like to force the export regardless of enabled gear rules re-run.py the gear with 'check_gear_rules' == False. Warning: Doing so may result in undesired behavior."
             log.error(message, exc_info=True)
             sys.exit(1)
